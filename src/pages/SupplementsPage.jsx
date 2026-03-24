@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import ConfirmDialog from "../components/ConfirmDialog.jsx";
 import { ymd, startOfWeekMonday, addDays } from "../lib/dates.js";
 
@@ -28,10 +28,35 @@ export default function SupplementsPage() {
 
   const isToday = selectedDateStr === todayStr;
 
+  // Drag-to-reorder
+  const dragIdx = useRef(null);
+  const overIdx = useRef(null);
+
+  const onDragStart = (idx) => (e) => { dragIdx.current = idx; e.dataTransfer.effectAllowed = "move"; };
+  const onDragOver = (idx) => (e) => { e.preventDefault(); overIdx.current = idx; };
+  const onDragEnd = async () => {
+    if (dragIdx.current !== null && overIdx.current !== null && dragIdx.current !== overIdx.current) {
+      const next = [...supplements];
+      const [moved] = next.splice(dragIdx.current, 1);
+      next.splice(overIdx.current, 0, moved);
+      setSupplements(next);
+      // Save new order — update each supplement with an order field
+      if (supplementsApi) {
+        for (let i = 0; i < next.length; i++) {
+          await supplementsApi.save(next[i].id, { ...next[i], order: i });
+        }
+      }
+    }
+    dragIdx.current = null;
+    overIdx.current = null;
+  };
+
   const loadSupplements = useCallback(async () => {
     if (!supplementsApi) return;
     const list = await supplementsApi.list();
-    setSupplements(list ?? []);
+    // Sort by order field if present, otherwise by original order
+    const sorted = (list ?? []).sort((a, b) => (a.order ?? 999) - (b.order ?? 999));
+    setSupplements(sorted);
   }, []);
 
   const loadLog = useCallback(async () => {
@@ -275,36 +300,63 @@ export default function SupplementsPage() {
 
         {/* Daily Checklist */}
         <div className="suppChecklist">
-          {Object.entries(grouped).map(([timeSlot, items]) => (
-            <div className="suppTimeGroup" key={timeSlot}>
-              <div className="suppTimeLabel">{timeSlot}</div>
-              {items.map(supp => {
-                const taken = !!log[supp.id];
-                return (
-                  <div
-                    className={`suppItem ${taken ? "suppItemChecked" : ""}`}
-                    key={supp.id}
-                    onClick={() => toggleTaken(supp.id)}
-                  >
-                    <div className="suppCheck">{taken ? "\u2713" : ""}</div>
-                    <div className="suppItemName">{supp.name}</div>
-                    {supp.dosage && <div className="suppItemDosage">{supp.dosage}</div>}
-                    {editMode && (
-                      <>
-                        <button className="btn suppEditBtn" onClick={e => { e.stopPropagation(); openEditForm(supp); }} type="button">Edit</button>
-                        <button className="suppDeleteBtn" onClick={e => { e.stopPropagation(); setConfirmDeleteId(supp.id); }} type="button">
-                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                            <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
-                          </svg>
-                        </button>
-                      </>
-                    )}
+          {editMode ? (
+            /* Flat reorder list in edit mode */
+            <div className="suppReorderList">
+              <div className="suppReorderHint">Drag to reorder. Changes apply to all views.</div>
+              {supplements.filter(s => s.active !== false).map((supp, idx) => (
+                <div
+                  className="suppReorderRow"
+                  key={supp.id}
+                  draggable
+                  onDragStart={onDragStart(idx)}
+                  onDragOver={onDragOver(idx)}
+                  onDragEnd={onDragEnd}
+                >
+                  <div className="suppReorderGrip">
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor">
+                      <circle cx="9" cy="5" r="2"/><circle cx="15" cy="5" r="2"/>
+                      <circle cx="9" cy="12" r="2"/><circle cx="15" cy="12" r="2"/>
+                      <circle cx="9" cy="19" r="2"/><circle cx="15" cy="19" r="2"/>
+                    </svg>
                   </div>
-                );
-              })}
+                  <div className="suppReorderInfo">
+                    <div className="suppReorderName">{supp.name}</div>
+                    {supp.dosage && <div className="suppReorderDosage">{supp.dosage}</div>}
+                  </div>
+                  <div className="suppReorderTime">{supp.timeOfDay}</div>
+                  <button className="btn suppEditBtn" onClick={e => { e.stopPropagation(); openEditForm(supp); }} type="button">Edit</button>
+                  <button className="suppDeleteBtn" onClick={e => { e.stopPropagation(); setConfirmDeleteId(supp.id); }} type="button">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
+                    </svg>
+                  </button>
+                </div>
+              ))}
             </div>
-          ))}
-          {Object.keys(grouped).length === 0 && (
+          ) : (
+            /* Normal grouped checklist */
+            Object.entries(grouped).map(([timeSlot, items]) => (
+              <div className="suppTimeGroup" key={timeSlot}>
+                <div className="suppTimeLabel">{timeSlot}</div>
+                {items.map(supp => {
+                  const taken = !!log[supp.id];
+                  return (
+                    <div
+                      className={`suppItem ${taken ? "suppItemChecked" : ""}`}
+                      key={supp.id}
+                      onClick={() => toggleTaken(supp.id)}
+                    >
+                      <div className="suppCheck">{taken ? "\u2713" : ""}</div>
+                      <div className="suppItemName">{supp.name}</div>
+                      {supp.dosage && <div className="suppItemDosage">{supp.dosage}</div>}
+                    </div>
+                  );
+                })}
+              </div>
+            ))
+          )}
+          {!editMode && Object.keys(grouped).length === 0 && (
             <div className="suppEmpty">No active supplements. Add one to get started.</div>
           )}
         </div>

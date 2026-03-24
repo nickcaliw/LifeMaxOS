@@ -16,6 +16,7 @@
     "lint": "eslint ."
   },
   "dependencies": {
+    "adm-zip": "^0.5.16",
     "better-sqlite3": "^12.6.2",
     "pdf-parse": "^2.4.5",
     "react": "^19.2.0",
@@ -38,9 +39,12 @@
   },
   "build": {
     "appId": "com.dailyplanner.app",
-    "productName": "Daily Planner",
+    "productName": "Apex OS",
     "mac": {
-      "target": ["dir", "zip"],
+      "target": [
+        "dir",
+        "zip"
+      ],
       "category": "public.app-category.productivity",
       "icon": "build/icon.icns"
     },

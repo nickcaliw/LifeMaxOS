@@ -5,7 +5,7 @@ const db = require("./db.cjs");
 
 const isDev = !app.isPackaged;
 
-app.setName("Daily Planner");
+app.setName("Apex OS");
 
 function createWindow() {
   const win = new BrowserWindow({
@@ -300,6 +300,153 @@ app.whenReady().then(() => {
   ipcMain.handle("file:write", (_e, filePath, content) => {
     fs.writeFileSync(filePath, content, "utf-8");
     return { ok: true };
+  });
+
+  // Apple Health Import
+  ipcMain.handle("health:import", async () => {
+    const win = BrowserWindow.getFocusedWindow();
+    const result = await dialog.showOpenDialog(win, {
+      title: "Import Apple Health Data",
+      filters: [{ name: "ZIP or XML", extensions: ["zip", "xml"] }],
+      properties: ["openFile"],
+    });
+    if (result.canceled || !result.filePaths.length) return null;
+
+    const filePath = result.filePaths[0];
+    let xmlText;
+
+    if (filePath.endsWith(".zip")) {
+      // Extract export.xml from zip
+      const AdmZip = require("adm-zip");
+      const zip = new AdmZip(filePath);
+      const entry = zip.getEntries().find(e =>
+        e.entryName === "apple_health_export/export.xml" ||
+        e.entryName === "export.xml" ||
+        e.entryName.endsWith("/export.xml")
+      );
+      if (!entry) return { error: "No export.xml found in zip file" };
+      xmlText = entry.getData().toString("utf-8");
+    } else {
+      xmlText = fs.readFileSync(filePath, "utf-8");
+    }
+
+    // Parse XML — stream-based to handle large files
+    const data = {
+      sleep: {},      // date → { hours, bedtime, waketime, quality }
+      steps: {},      // date → { count }
+      workouts: {},   // date → { type, duration, calories, distance }
+      heartRate: {},  // date → { avg, min, max }
+      activeCalories: {}, // date → { total }
+    };
+
+    // Simple regex-based parsing for Record elements (faster than full XML parser)
+    const recordRegex = /<Record\s+([^>]+)\/>/g;
+    const attrRegex = /(\w+)="([^"]*)"/g;
+
+    let match;
+    while ((match = recordRegex.exec(xmlText)) !== null) {
+      const attrs = {};
+      let attrMatch;
+      while ((attrMatch = attrRegex.exec(match[1])) !== null) {
+        attrs[attrMatch[1]] = attrMatch[2];
+      }
+
+      const type = attrs.type;
+      const value = parseFloat(attrs.value) || 0;
+      const startDate = attrs.startDate;
+      if (!startDate) continue;
+
+      // Extract date (YYYY-MM-DD) from "2026-03-24 07:30:00 -0400" format
+      const dateStr = startDate.slice(0, 10);
+
+      if (type === "HKQuantityTypeIdentifierStepCount") {
+        data.steps[dateStr] = data.steps[dateStr] || { count: 0 };
+        data.steps[dateStr].count += Math.round(value);
+      }
+      else if (type === "HKQuantityTypeIdentifierActiveEnergyBurned") {
+        data.activeCalories[dateStr] = data.activeCalories[dateStr] || { total: 0 };
+        data.activeCalories[dateStr].total += Math.round(value);
+      }
+      else if (type === "HKQuantityTypeIdentifierHeartRate") {
+        if (!data.heartRate[dateStr]) data.heartRate[dateStr] = { sum: 0, count: 0, min: 999, max: 0 };
+        data.heartRate[dateStr].sum += value;
+        data.heartRate[dateStr].count++;
+        data.heartRate[dateStr].min = Math.min(data.heartRate[dateStr].min, value);
+        data.heartRate[dateStr].max = Math.max(data.heartRate[dateStr].max, value);
+      }
+    }
+
+    // Compute heart rate averages
+    for (const [date, hr] of Object.entries(data.heartRate)) {
+      hr.avg = Math.round(hr.sum / hr.count);
+      hr.min = Math.round(hr.min);
+      hr.max = Math.round(hr.max);
+      delete hr.sum;
+      delete hr.count;
+    }
+
+    // Parse sleep analysis from ActivitySummary or SleepAnalysis records
+    const sleepRegex = /<Record\s+type="HKCategoryTypeIdentifierSleepAnalysis"[^>]*startDate="([^"]*)"[^>]*endDate="([^"]*)"[^>]*value="([^"]*)"[^>]*\/>/g;
+    while ((match = sleepRegex.exec(xmlText)) !== null) {
+      const start = match[1];
+      const end = match[2];
+      const value = match[3];
+      // InBed or AsleepUnspecified/AsleepCore/AsleepDeep/AsleepREM
+      if (value.includes("Asleep") || value === "HKCategoryValueSleepAnalysisInBed") {
+        const dateStr = start.slice(0, 10);
+        const startTime = new Date(start.replace(" ", "T"));
+        const endTime = new Date(end.replace(" ", "T"));
+        const hours = (endTime - startTime) / (1000 * 60 * 60);
+        if (hours > 0 && hours < 24) {
+          if (!data.sleep[dateStr]) data.sleep[dateStr] = { hours: 0, bedtime: "", waketime: "" };
+          data.sleep[dateStr].hours += hours;
+          if (!data.sleep[dateStr].bedtime) {
+            data.sleep[dateStr].bedtime = start.slice(11, 16);
+            data.sleep[dateStr].waketime = end.slice(11, 16);
+          }
+        }
+      }
+    }
+
+    // Round sleep hours
+    for (const [, s] of Object.entries(data.sleep)) {
+      s.hours = Math.round(s.hours * 10) / 10;
+    }
+
+    // Parse Workout elements
+    const workoutRegex = /<Workout\s+([^>]+)>/g;
+    while ((match = workoutRegex.exec(xmlText)) !== null) {
+      const attrs = {};
+      let attrMatch;
+      while ((attrMatch = attrRegex.exec(match[1])) !== null) {
+        attrs[attrMatch[1]] = attrMatch[2];
+      }
+      const startDate = attrs.startDate;
+      if (!startDate) continue;
+      const dateStr = startDate.slice(0, 10);
+      const duration = parseFloat(attrs.duration) || 0;
+      const calories = parseFloat(attrs.totalEnergyBurned) || 0;
+      const distance = parseFloat(attrs.totalDistance) || 0;
+      const activityType = (attrs.workoutActivityType || "").replace("HKWorkoutActivityType", "");
+
+      if (!data.workouts[dateStr]) data.workouts[dateStr] = [];
+      data.workouts[dateStr].push({
+        type: activityType,
+        durationMin: Math.round(duration),
+        calories: Math.round(calories),
+        distanceKm: Math.round(distance * 100) / 100,
+      });
+    }
+
+    const summary = {
+      sleepDays: Object.keys(data.sleep).length,
+      stepDays: Object.keys(data.steps).length,
+      workoutDays: Object.keys(data.workouts).length,
+      heartRateDays: Object.keys(data.heartRate).length,
+      calorieDays: Object.keys(data.activeCalories).length,
+    };
+
+    return { data, summary };
   });
 
   // Print to PDF

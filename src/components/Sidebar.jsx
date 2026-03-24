@@ -207,7 +207,7 @@ export default function Sidebar({ activePage, onNavigate }) {
   return (
     <div className="sidebar">
       <div className="sidebarHeader">
-        <div className="sidebarBrand">Daily Planner</div>
+        <div className="sidebarBrand">Apex OS</div>
       </div>
 
       <nav className="sidebarNav">

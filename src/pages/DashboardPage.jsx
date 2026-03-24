@@ -72,6 +72,9 @@ export default function DashboardPage({ onNavigate }) {
   const [activeProjects, setActiveProjects] = useState([]);
   const [sleepRange, setSleepRange] = useState({});
   const [meditationRange, setMeditationRange] = useState({});
+  const [todaySteps, setTodaySteps] = useState(null);
+  const [todayHeartRate, setTodayHeartRate] = useState(null);
+  const [todayActiveCal, setTodayActiveCal] = useState(null);
 
   // ── Focus timer ──
   const [focusMode, setFocusMode] = useState("work");
@@ -209,6 +212,13 @@ export default function DashboardPage({ onNavigate }) {
         if (wu) setWeightUnit(wu);
         const un = await settingsApi.get("user_name");
         if (un) setUserName(un);
+        // Apple Health data
+        const stepsRaw = await settingsApi.get(`steps_${todayStr}`);
+        if (stepsRaw) try { setTodaySteps(JSON.parse(stepsRaw)); } catch {}
+        const hrRaw = await settingsApi.get(`heartrate_${todayStr}`);
+        if (hrRaw) try { setTodayHeartRate(JSON.parse(hrRaw)); } catch {}
+        const acRaw = await settingsApi.get(`activecal_${todayStr}`);
+        if (acRaw) try { setTodayActiveCal(JSON.parse(acRaw)); } catch {}
       }
     }
     load();
@@ -582,6 +592,36 @@ export default function DashboardPage({ onNavigate }) {
               </div>
               <div className="dashCardBig">{medMinutes > 0 ? `${medMinutes} min` : "—"}</div>
             </button>
+
+            {todaySteps && (
+              <div className="dashCard">
+                <div className="dashCardHeader">
+                  <div className="dashCardTitle">Steps</div>
+                </div>
+                <div className="dashCardBig">{todaySteps.count.toLocaleString()}</div>
+                <div className="dashCardMeta">steps today</div>
+              </div>
+            )}
+
+            {todayActiveCal && (
+              <div className="dashCard">
+                <div className="dashCardHeader">
+                  <div className="dashCardTitle">Active Cal</div>
+                </div>
+                <div className="dashCardBig">{todayActiveCal.total}</div>
+                <div className="dashCardMeta">calories burned</div>
+              </div>
+            )}
+
+            {todayHeartRate && (
+              <div className="dashCard">
+                <div className="dashCardHeader">
+                  <div className="dashCardTitle">Heart Rate</div>
+                </div>
+                <div className="dashCardBig">{todayHeartRate.avg} bpm</div>
+                <div className="dashCardMeta">{todayHeartRate.min}–{todayHeartRate.max} range</div>
+              </div>
+            )}
 
             <button className="dashCard" onClick={() => onNavigate("goals")} type="button">
               <div className="dashCardHeader">

@@ -155,6 +155,36 @@ export default function RoutinesPage() {
     saveRoutine(routineId, { ...routine, steps });
   };
 
+  // Step drag-to-reorder
+  const stepDragIdx = useRef(null);
+  const stepOverIdx = useRef(null);
+  const stepDragRoutine = useRef(null);
+
+  const onStepDragStart = (routineId, idx) => (e) => {
+    stepDragIdx.current = idx;
+    stepDragRoutine.current = routineId;
+    e.dataTransfer.effectAllowed = "move";
+  };
+  const onStepDragOver = (idx) => (e) => {
+    e.preventDefault();
+    stepOverIdx.current = idx;
+  };
+  const onStepDragEnd = () => {
+    const routineId = stepDragRoutine.current;
+    if (stepDragIdx.current !== null && stepOverIdx.current !== null && stepDragIdx.current !== stepOverIdx.current && routineId) {
+      const routine = routines.find(r => r.id === routineId);
+      if (routine) {
+        const next = [...(routine.steps || [])];
+        const [moved] = next.splice(stepDragIdx.current, 1);
+        next.splice(stepOverIdx.current, 0, moved);
+        saveRoutine(routineId, { ...routine, steps: next });
+      }
+    }
+    stepDragIdx.current = null;
+    stepOverIdx.current = null;
+    stepDragRoutine.current = null;
+  };
+
   // Complete all steps in a routine
   const completeAll = (routine) => {
     const next = { ...todayLogs };
@@ -286,7 +316,19 @@ export default function RoutinesPage() {
                           {isStepDone(routine.id, step.id) ? "✓" : ""}
                         </button>
                         {isEditing ? (
-                          <div className="routStepEdit">
+                          <div className="routStepEdit"
+                            draggable
+                            onDragStart={onStepDragStart(routine.id, idx)}
+                            onDragOver={onStepDragOver(idx)}
+                            onDragEnd={onStepDragEnd}
+                          >
+                            <div className="routStepGrip" title="Drag to reorder">
+                              <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor">
+                                <circle cx="9" cy="5" r="2"/><circle cx="15" cy="5" r="2"/>
+                                <circle cx="9" cy="12" r="2"/><circle cx="15" cy="12" r="2"/>
+                                <circle cx="9" cy="19" r="2"/><circle cx="15" cy="19" r="2"/>
+                              </svg>
+                            </div>
                             <input
                               className="routStepInput"
                               value={step.text}
@@ -413,7 +455,9 @@ export default function RoutinesPage() {
         .routStepDone .routStepText { text-decoration: line-through; }
         .routStepDuration { font-size: 11px; color: var(--muted); background: var(--chip); padding: 1px 6px; border-radius: 4px; }
 
-        .routStepEdit { display: flex; align-items: center; gap: 6px; flex: 1; }
+        .routStepEdit { display: flex; align-items: center; gap: 6px; flex: 1; cursor: grab; }
+        .routStepEdit:active { cursor: grabbing; }
+        .routStepGrip { color: var(--muted); opacity: 0.4; flex-shrink: 0; cursor: grab; }
         .routStepInput {
           flex: 1; font-size: 13px; padding: 5px 8px;
           border: 1px solid var(--line); border-radius: 6px;

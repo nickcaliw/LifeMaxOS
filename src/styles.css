@@ -35,27 +35,27 @@
    DARK THEME
    ============================================================ */
 [data-theme="dark"]{
-  --bg: #1a1a2e;
-  --paper: #25253e;
-  --ink: #e8e8e8;
-  --muted: #8888aa;
-  --line: rgba(255,255,255,0.10);
-  --line2: rgba(255,255,255,0.06);
-  --chip: rgba(255,255,255,0.07);
-  --shadow: 0 2px 8px rgba(0,0,0,0.20), 0 8px 24px rgba(0,0,0,0.28);
+  --bg: #0f0f14;
+  --paper: #1a1a22;
+  --ink: #e8eaed;
+  --muted: #7a8899;
+  --line: rgba(255,255,255,0.08);
+  --line2: rgba(255,255,255,0.05);
+  --chip: rgba(255,255,255,0.06);
+  --shadow: 0 2px 8px rgba(0,0,0,0.30), 0 8px 24px rgba(0,0,0,0.40);
 
-  /* Accent — keep the same blue */
-  --accent: #5B7CF5;
-  --accent-soft: rgba(91,124,245,0.14);
-  --accent-medium: rgba(91,124,245,0.22);
+  /* Accent — cyan-to-blue from Apex OS logo */
+  --accent: #3ECFC0;
+  --accent-soft: rgba(62,207,192,0.12);
+  --accent-medium: rgba(62,207,192,0.20);
 
   /* Today */
   --todayBorder: var(--accent);
-  --todayGlow: rgba(91,124,245,0.16);
+  --todayGlow: rgba(62,207,192,0.14);
   --todayChip: var(--accent-soft);
 
   /* Sidebar */
-  --sidebar-bg: #16162a;
+  --sidebar-bg: #0b0b10;
 }
 
 /* Dark-mode overrides for elements with hardcoded colors */
@@ -67,7 +67,7 @@
   box-shadow: 0 1px 3px rgba(0,0,0,0.20);
 }
 [data-theme="dark"] .topbar{
-  background: rgba(26,26,46,0.85);
+  background: rgba(15,15,20,0.90);
 }
 [data-theme="dark"] input,
 [data-theme="dark"] textarea,
@@ -1546,6 +1546,84 @@ body{
 }
 .hbMatrixRow:last-child{ border-bottom: none; }
 .hbMatrixRow:hover{ background: rgba(0,0,0,0.02); }
+/* ─── Habits Edit Panel ─── */
+.hbEditPanel{
+  padding: 16px 24px;
+  border-bottom: 1px solid var(--line2);
+  background: var(--paper);
+}
+.hbEditList{
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-bottom: 12px;
+  max-height: 400px;
+  overflow-y: auto;
+}
+.hbEditRow{
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  background: var(--bg);
+  border-radius: 8px;
+  cursor: grab;
+}
+.hbEditRow:active{ cursor: grabbing; }
+.hbEditGrip{
+  color: var(--muted);
+  opacity: 0.4;
+  flex-shrink: 0;
+  cursor: grab;
+}
+.hbEditName{
+  flex: 1;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--ink);
+}
+.hbEditInput{
+  flex: 1;
+  padding: 6px 10px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  font-size: 14px;
+  background: var(--paper);
+  color: var(--ink);
+  font-family: var(--font);
+}
+.hbEditInput:focus{ border-color: var(--accent); outline: none; }
+.hbEditRename{
+  background: none; border: none; cursor: pointer; padding: 4px;
+  border-radius: 4px; color: var(--muted); display: flex; align-items: center;
+}
+.hbEditRename:hover{ color: var(--accent); background: var(--accent-soft); }
+.hbEditDelete{
+  background: none; border: none; cursor: pointer; padding: 4px 8px;
+  border-radius: 4px; color: var(--muted); font-size: 18px; font-weight: 700;
+  display: flex; align-items: center; line-height: 1;
+}
+.hbEditDelete:hover{ color: #e53935; background: rgba(229,57,53,0.1); }
+.hbEditAdd{
+  display: flex;
+  gap: 8px;
+}
+.hbEditAdd .btn{ flex-shrink: 0; }
+
+.hbMatrixRowHistorical{ opacity: 0.6; }
+.hbMatrixRowHistorical .hbMatrixName{ font-style: italic; }
+.hbCellHistorical{ cursor: default; }
+.hbMatrixDivider{
+  grid-column: 1 / -1;
+  padding: 10px 0 6px;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+  border-top: 1px dashed var(--line);
+  margin-top: 4px;
+}
 
 .hbMatrixName{
   font-size: 12.5px;
@@ -2014,14 +2092,14 @@ body{
   overflow: hidden;
 }
 [data-theme="dark"] .dashPage{
-  --dash-bg: #151528;
-  --dash-paper: #1e1e36;
-  --dash-planner-bg: #1c1c32;
-  --dash-card-bg: #1e1e36;
+  --dash-bg: #0d0d12;
+  --dash-paper: #16161e;
+  --dash-planner-bg: #131319;
+  --dash-card-bg: #16161e;
 }
 [data-theme="dark"] .dashCard:hover{
-  border-color: rgba(255,255,255,0.12);
-  box-shadow: 0 4px 16px rgba(0,0,0,0.25);
+  border-color: rgba(62,207,192,0.15);
+  box-shadow: 0 4px 16px rgba(0,0,0,0.35);
 }
 [data-theme="dark"] .dashFocusCompact,
 [data-theme="dark"] .dashSuppCompact{
@@ -2394,7 +2472,7 @@ body{
   position: relative;
 }
 [data-theme="dark"] .dashBible{
-  background: linear-gradient(135deg, #1e1e36 0%, #252542 100%);
+  background: linear-gradient(135deg, #12121a 0%, #1a1a24 100%);
 }
 .dashBibleVerse{
   font-size: 17px;
@@ -4341,6 +4419,20 @@ body{
 .suppItem:hover .suppDeleteBtn { opacity: 1; }
 .suppDeleteBtn:hover { color: #d32f2f; }
 
+.suppReorderList{ display: flex; flex-direction: column; gap: 4px; }
+.suppReorderHint{ font-size: 12px; color: var(--muted); margin-bottom: 8px; }
+.suppReorderRow{
+  display: flex; align-items: center; gap: 10px;
+  padding: 10px 12px; background: var(--bg); border-radius: 8px;
+  cursor: grab;
+}
+.suppReorderRow:active{ cursor: grabbing; }
+.suppReorderGrip{ color: var(--muted); opacity: 0.4; flex-shrink: 0; cursor: grab; }
+.suppReorderInfo{ flex: 1; min-width: 0; }
+.suppReorderName{ font-size: 14px; font-weight: 600; color: var(--ink); }
+.suppReorderDosage{ font-size: 12px; color: var(--muted); }
+.suppReorderTime{ font-size: 11px; color: var(--muted); background: var(--chip); padding: 2px 8px; border-radius: 10px; flex-shrink: 0; }
+
 .suppForm {
   background: var(--paper); border: 1px solid var(--border); border-radius: 12px;
   padding: 16px; display: flex; flex-direction: column; gap: 10px;
@@ -4385,7 +4477,8 @@ body{
   background: var(--paper); border: 1px solid var(--border); border-radius: 12px;
   padding: 20px; margin-bottom: 24px;
 }
-.hbHeatmapTitle { font-size: 14px; font-weight: 600; color: var(--muted); margin-bottom: 16px; }
+.hbHeatmapTitleRow { display: flex; align-items: center; gap: 12px; margin-bottom: 16px; }
+.hbHeatmapTitle { font-size: 14px; font-weight: 600; color: var(--muted); }
 
 .hbHeatmap { display: flex; gap: 4px; overflow-x: auto; padding-bottom: 8px; }
 .hbHeatmapDayLabels {
@@ -4393,7 +4486,20 @@ body{
   font-size: 10px; color: var(--muted); min-width: 28px;
 }
 .hbHeatmapDayLabels div { height: 14px; line-height: 14px; }
+.hbHeatmapGridWrap { flex: 1; min-width: 0; overflow-x: auto; }
+.hbHeatmapMonths {
+  display: grid;
+  grid-auto-columns: 14px;
+  grid-auto-flow: column;
+  gap: 2px;
+  margin-bottom: 4px;
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--muted);
+}
+.hbHeatmapMonthLabel { white-space: nowrap; }
 .hbHeatmapGrid { display: flex; gap: 2px; }
+.hbHeatmapCellOutside { opacity: 0; pointer-events: none; }
 .hbHeatmapCol { display: flex; flex-direction: column; gap: 2px; }
 .hbHeatmapCell {
   width: 14px; height: 14px; border-radius: 2px;
@@ -4969,6 +5075,20 @@ body{
 }
 .settToggle input:checked + .settToggleTrack::after {
   transform: translateX(20px);
+}
+.settHealthSummary{
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 6px;
+}
+.settHealthSummary span{
+  font-size: 12px;
+  font-weight: 600;
+  padding: 3px 10px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  border-radius: 20px;
 }
 
 /* ─── Habits Settings ─── */
@@ -6946,7 +7066,7 @@ body{
   z-index: 10000;
 }
 [data-theme="dark"] .obOverlay{
-  background: linear-gradient(135deg, #151528 0%, #1a1a30 100%);
+  background: linear-gradient(135deg, #0b0b10 0%, #0f0f16 100%);
 }
 .obCard{
   background: var(--paper);

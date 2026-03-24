@@ -90,6 +90,9 @@ contextBridge.exposeInMainWorld("settingsApi", {
 contextBridge.exposeInMainWorld("searchApi", {
   global: inv("search:global"),
 });
+contextBridge.exposeInMainWorld("healthApi", {
+  import: inv("health:import"),
+});
 contextBridge.exposeInMainWorld("dataApi", {
   export: inv("data:export"), import: inv("data:import"),
   saveJson: inv("dialog:saveJson"), openJson: inv("dialog:openJson"),

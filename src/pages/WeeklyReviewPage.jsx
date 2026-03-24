@@ -41,9 +41,18 @@ export default function WeeklyReviewPage() {
     if (plannerApi) promises.push(plannerApi.getRange(wsStr, endStr).then(r => setWeekData(r || {})));
     if (workoutApi) promises.push(workoutApi.getRange(wsStr, endStr).then(r => setWorkoutData(r || {})));
     if (focusApi) promises.push(focusApi.getRange(wsStr, endStr).then(r => setFocusData(r || [])));
-    if (sleepApi) promises.push(sleepApi.range(wsStr, endStr).then(r => setSleepData(r || [])));
-    if (waterApi) promises.push(waterApi.range(wsStr, endStr).then(r => setWaterData(r || [])));
-    if (meditationApi) promises.push(meditationApi.range(wsStr, endStr).then(r => setMedData(r || [])));
+    if (sleepApi) promises.push(sleepApi.range(wsStr, endStr).then(r => {
+      const obj = r || {};
+      setSleepData(Array.isArray(obj) ? obj : Object.values(obj));
+    }));
+    if (waterApi) promises.push(waterApi.range(wsStr, endStr).then(r => {
+      const obj = r || {};
+      setWaterData(Array.isArray(obj) ? obj : Object.values(obj));
+    }));
+    if (meditationApi) promises.push(meditationApi.range(wsStr, endStr).then(r => {
+      const obj = r || {};
+      setMedData(Array.isArray(obj) ? obj : Object.values(obj));
+    }));
     if (journalApi) promises.push(journalApi.list().then(r => setJournalData((r || []).filter(j => j.date >= wsStr && j.date <= endStr))));
     if (goalsApi) promises.push(goalsApi.list().then(r => setGoalsData(r || [])));
 

@@ -8,8 +8,11 @@ const notificationApi = typeof window !== "undefined" ? window.notificationApi :
 const dialogApi = typeof window !== "undefined" ? window.dialogApi : null;
 const plannerApi = typeof window !== "undefined" ? window.plannerApi : null;
 const mfpApi = typeof window !== "undefined" ? window.mfpApi : null;
+const healthApi = typeof window !== "undefined" ? window.healthApi : null;
+const sleepApi = typeof window !== "undefined" ? window.sleepApi : null;
+const bodyApi = typeof window !== "undefined" ? window.bodyApi : null;
 
-const APP_NAME = "Daily Planner";
+const APP_NAME = "Apex OS";
 const APP_VERSION = "1.0.0";
 
 export default function SettingsPage() {
@@ -143,6 +146,61 @@ export default function SettingsPage() {
   const handleTestNotification = () => {
     if (notificationApi) {
       notificationApi.send("Daily Planner", "Notifications are working!");
+    }
+  };
+
+  // --- Apple Health Import ---
+  const [healthImporting, setHealthImporting] = useState(false);
+  const [healthResult, setHealthResult] = useState(null);
+
+  const handleHealthImport = async () => {
+    if (!healthApi) return;
+    setHealthImporting(true);
+    setHealthResult(null);
+    try {
+      const result = await healthApi.import();
+      if (!result) { setHealthImporting(false); return; } // cancelled
+      if (result.error) { showMessage("error", result.error); setHealthImporting(false); return; }
+
+      const { data, summary } = result;
+      let imported = 0;
+
+      // Import sleep data
+      if (sleepApi && data.sleep) {
+        for (const [date, sleep] of Object.entries(data.sleep)) {
+          if (sleep.hours > 0) {
+            await sleepApi.save(date, sleep);
+            imported++;
+          }
+        }
+      }
+
+      // Import steps + active calories into settings (for dashboard display)
+      if (settingsApi) {
+        if (data.steps) {
+          for (const [date, steps] of Object.entries(data.steps)) {
+            await settingsApi.set(`steps_${date}`, JSON.stringify(steps));
+            imported++;
+          }
+        }
+        if (data.activeCalories) {
+          for (const [date, cal] of Object.entries(data.activeCalories)) {
+            await settingsApi.set(`activecal_${date}`, JSON.stringify(cal));
+          }
+        }
+        if (data.heartRate) {
+          for (const [date, hr] of Object.entries(data.heartRate)) {
+            await settingsApi.set(`heartrate_${date}`, JSON.stringify(hr));
+          }
+        }
+      }
+
+      setHealthResult(summary);
+      showMessage("success", `Imported ${imported} records from Apple Health!`);
+    } catch (err) {
+      showMessage("error", "Import failed: " + (err.message || err));
+    } finally {
+      setHealthImporting(false);
     }
   };
 
@@ -283,6 +341,56 @@ export default function SettingsPage() {
               <div className="settRowInfo">
                 <div className="settDesc" style={{ fontSize: "12px", color: "var(--muted)" }}>
                   To export from MyFitnessPal: go to myfitnesspal.com → Food Diary → select a date range → Print → Save as PDF. The PDF should show daily totals with Calories, Carbs, Fat, and Protein.
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        {/* Apple Health Import */}
+        <section className="settSection">
+          <h2 className="settSectionTitle">Apple Health</h2>
+          <div className="settCard">
+            <div className="settRow">
+              <div className="settRowInfo">
+                <div className="settLabel">Import Apple Health Data</div>
+                <div className="settDesc">
+                  Import sleep, steps, workouts, heart rate, and active calories from an Apple Health export.
+                </div>
+              </div>
+              <button
+                className="btn btnPrimary"
+                onClick={handleHealthImport}
+                disabled={healthImporting}
+              >
+                {healthImporting ? "Importing..." : "Import"}
+              </button>
+            </div>
+
+            {healthResult && (
+              <>
+                <div className="settDivider" />
+                <div className="settRow">
+                  <div className="settRowInfo">
+                    <div className="settLabel">Last Import Summary</div>
+                    <div className="settHealthSummary">
+                      <span>{healthResult.sleepDays} sleep days</span>
+                      <span>{healthResult.stepDays} step days</span>
+                      <span>{healthResult.workoutDays} workout days</span>
+                      <span>{healthResult.heartRateDays} heart rate days</span>
+                      <span>{healthResult.calorieDays} calorie days</span>
+                    </div>
+                  </div>
+                </div>
+              </>
+            )}
+
+            <div className="settDivider" />
+
+            <div className="settRow">
+              <div className="settRowInfo">
+                <div className="settDesc" style={{ fontSize: "12px", color: "var(--muted)" }}>
+                  On your iPhone: Health app → Profile icon (top right) → Export All Health Data → AirDrop or save the .zip to your Mac → Select it here.
                 </div>
               </div>
             </div>
