@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useHabits } from "../hooks/useHabits.js";
+import { SPIRITUAL_PATHS } from "../lib/spirituality.js";
 import ConfirmDialog from "../components/ConfirmDialog.jsx";
 
 const settingsApi = typeof window !== "undefined" ? window.settingsApi : null;
@@ -15,7 +16,7 @@ const bodyApi = typeof window !== "undefined" ? window.bodyApi : null;
 const APP_NAME = "Apex OS";
 const APP_VERSION = "1.0.0";
 
-export default function SettingsPage() {
+export default function SettingsPage({ spiritualPath, onSpiritualPathChange }) {
   const [waterReminder, setWaterReminder] = useState(false);
   const [bedtimeReminder, setBedtimeReminder] = useState(false);
   const [supplementReminder, setSupplementReminder] = useState(false);
@@ -269,6 +270,32 @@ export default function SettingsPage() {
             {message.text}
           </div>
         )}
+
+        {/* Spirituality */}
+        <section className="settSection">
+          <h2 className="settSectionTitle">Spirituality</h2>
+          <div className="settCard">
+            <div className="settDesc" style={{ padding: "0 0 12px" }}>
+              Choose your spiritual path to personalize your dashboard and sidebar.
+            </div>
+            <div className="settSpiritualGrid">
+              {Object.entries(SPIRITUAL_PATHS).map(([key, config]) => (
+                <button
+                  key={key}
+                  className={`settSpiritualOption ${spiritualPath === key ? "settSpiritualOptionActive" : ""}`}
+                  onClick={() => {
+                    if (settingsApi) settingsApi.set("spiritual_path", key);
+                    if (onSpiritualPathChange) onSpiritualPathChange(key);
+                  }}
+                  type="button"
+                >
+                  <span className="settSpiritualEmoji">{config.emoji}</span>
+                  <span className="settSpiritualLabel">{config.label}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+        </section>
 
         {/* Data Management */}
         <section className="settSection">

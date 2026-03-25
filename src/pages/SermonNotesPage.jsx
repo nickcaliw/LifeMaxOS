@@ -5,7 +5,7 @@ const api = typeof window !== "undefined" ? window.collectionApi : null;
 const COLLECTION = "sermonnotes";
 const genId = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
 
-export default function SermonNotesPage() {
+export default function SermonNotesPage({ collection = "sermonnotes", title = "Sermon Notes" }) {
   const [items, setItems] = useState([]);
   const [selectedId, setSelectedId] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -14,12 +14,12 @@ export default function SermonNotesPage() {
 
   const refresh = useCallback(async () => {
     if (api) {
-      const list = await api.list(COLLECTION) || [];
+      const list = await api.list(collection) || [];
       // Sort newest first
       list.sort((a, b) => (b.date || "").localeCompare(a.date || ""));
       setItems(list);
     }
-  }, []);
+  }, [collection]);
 
   useEffect(() => {
     setLoading(true);
@@ -31,8 +31,8 @@ export default function SermonNotesPage() {
   const save = useCallback((id, data) => {
     setItems(prev => prev.map(item => item.id === id ? { ...item, ...data } : item));
     if (saveTimer.current) clearTimeout(saveTimer.current);
-    saveTimer.current = setTimeout(() => { if (api) api.save(id, COLLECTION, data); }, 400);
-  }, []);
+    saveTimer.current = setTimeout(() => { if (api) api.save(id, collection, data); }, 400);
+  }, [collection]);
 
   const update = (field, value) => {
     if (!selected) return;
@@ -46,7 +46,7 @@ export default function SermonNotesPage() {
       speaker: "", title: "", scriptureRef: "",
       notes: "", keyTakeaways: "", actionItems: "",
     };
-    if (api) await api.save(id, COLLECTION, data);
+    if (api) await api.save(id, collection, data);
     await refresh();
     setSelectedId(id);
   };
@@ -92,7 +92,7 @@ export default function SermonNotesPage() {
 
       <div className="topbar">
         <div className="topbarLeft">
-          <h1 className="pageTitle">Sermon Notes</h1>
+          <h1 className="pageTitle">{title}</h1>
           <div className="weekBadge">{items.length} sermons</div>
         </div>
         <div className="nav">

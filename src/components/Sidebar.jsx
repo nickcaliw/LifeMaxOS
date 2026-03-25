@@ -1,4 +1,5 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
+import { SPIRITUAL_PATHS } from "../lib/spirituality.js";
 
 /* ─── Icon helpers ─── */
 const I = ({ children, size = 20 }) => (
@@ -24,8 +25,30 @@ const MoonIcon = () => (
   <I size={18}><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" /></I>
 );
 
+/* ─── Icon map for dynamic spirituality items ─── */
+const SPIRITUALITY_ICONS = {
+  // Book icon — for study pages (biblestudy, quranstudy)
+  biblestudy:        <I><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20" /><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z" /><path d="M12 6v4" /><path d="M10 8h4" /></I>,
+  quranstudy:        <I><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20" /><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z" /><path d="M12 6v4" /><path d="M10 8h4" /></I>,
+  // Journal icon — for prayer/dua/gratitude pages
+  prayerjournal:     <I><path d="M12 22c-4 0-8-2-8-8V6a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v8c0 6-4 8-8 8z" /><path d="M12 8v4" /><path d="M10 10h4" /></I>,
+  duajournal:        <I><path d="M12 22c-4 0-8-2-8-8V6a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v8c0 6-4 8-8 8z" /><path d="M12 8v4" /><path d="M10 10h4" /></I>,
+  gratitudepractice: <I><path d="M12 22c-4 0-8-2-8-8V6a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v8c0 6-4 8-8 8z" /><path d="M12 8v4" /><path d="M10 10h4" /></I>,
+  energytracking:    <I><path d="M12 22c-4 0-8-2-8-8V6a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v8c0 6-4 8-8 8z" /><path d="M12 8v4" /><path d="M10 10h4" /></I>,
+  // Star icon — for memory/affirmation pages
+  scripturememory:   <I><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20" /><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z" /><path d="M9 7h6" /><path d="M9 11h4" /><circle cx="15" cy="15" r="3" /></I>,
+  surahmemory:       <I><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20" /><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z" /><path d="M9 7h6" /><path d="M9 11h4" /><circle cx="15" cy="15" r="3" /></I>,
+  affirmationjournal:<I><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20" /><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z" /><path d="M9 7h6" /><path d="M9 11h4" /><circle cx="15" cy="15" r="3" /></I>,
+  // Document icon — for notes pages
+  sermonnotes:       <I><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" /><line x1="9" y1="13" x2="15" y2="13" /><line x1="9" y1="17" x2="13" y2="17" /></I>,
+  khutbahnotes:      <I><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" /><line x1="9" y1="13" x2="15" y2="13" /><line x1="9" y1="17" x2="13" y2="17" /></I>,
+  // Person icon — for meditation pages
+  meditation:        <I><circle cx="12" cy="6" r="3" /><path d="M12 9v4" /><path d="M7.5 19a4.5 4.5 0 0 1 9 0" /><path d="M5 21h14" /></I>,
+  visionmeditation:  <I><circle cx="12" cy="6" r="3" /><path d="M12 9v4" /><path d="M7.5 19a4.5 4.5 0 0 1 9 0" /><path d="M5 21h14" /></I>,
+};
+
 /* ─── Navigation structure ─── */
-const NAV = [
+const NAV_STATIC = [
   /* Dashboard — standalone */
   {
     id: "dashboard", label: "Dashboard",
@@ -74,18 +97,6 @@ const NAV = [
       { id: "sidehustles", label: "Side Hustles", icon: <I><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z" /></I> },
       { id: "projects", label: "Projects", icon: <I><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" /></I> },
       { id: "subscriptions", label: "Subscriptions", icon: <I><path d="M21 12a9 9 0 1 1-9-9" /><path d="M21 3v6h-6" /><path d="M21 3l-9 9" /></I> },
-    ],
-  },
-
-  /* ── Spirituality ── */
-  {
-    section: "Spirituality", collapsible: true, defaultOpen: false,
-    items: [
-      { id: "biblestudy", label: "Bible Study", icon: <I><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20" /><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z" /><path d="M12 6v4" /><path d="M10 8h4" /></I> },
-      { id: "prayerjournal", label: "Prayer Journal", icon: <I><path d="M12 22c-4 0-8-2-8-8V6a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v8c0 6-4 8-8 8z" /><path d="M12 8v4" /><path d="M10 10h4" /></I> },
-      { id: "scripturememory", label: "Scripture Memory", icon: <I><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20" /><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z" /><path d="M9 7h6" /><path d="M9 11h4" /><circle cx="15" cy="15" r="3" /></I> },
-      { id: "sermonnotes", label: "Sermon Notes", icon: <I><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" /><line x1="9" y1="13" x2="15" y2="13" /><line x1="9" y1="17" x2="13" y2="17" /></I> },
-      { id: "meditation", label: "Meditation", icon: <I><circle cx="12" cy="6" r="3" /><path d="M12 9v4" /><path d="M7.5 19a4.5 4.5 0 0 1 9 0" /><path d="M5 21h14" /></I> },
     ],
   },
 
@@ -138,11 +149,32 @@ const NAV = [
   },
 ];
 
-export default function Sidebar({ activePage, onNavigate }) {
+export default function Sidebar({ activePage, onNavigate, spiritualPath }) {
+  /* Build full nav by inserting the dynamic Spirituality section */
+  const nav = useMemo(() => {
+    if (!spiritualPath || spiritualPath === "none") return NAV_STATIC;
+
+    const pathConfig = SPIRITUAL_PATHS[spiritualPath];
+    if (!pathConfig || pathConfig.sidebarItems.length === 0) return NAV_STATIC;
+
+    const spiritualitySection = {
+      section: "Spirituality", collapsible: true, defaultOpen: false,
+      items: pathConfig.sidebarItems.map((item) => ({
+        ...item,
+        icon: SPIRITUALITY_ICONS[item.id] || SPIRITUALITY_ICONS.meditation,
+      })),
+    };
+
+    // Insert Spirituality right before the Relationships section
+    const idx = NAV_STATIC.findIndex((e) => e.section === "Relationships");
+    if (idx === -1) return [...NAV_STATIC, spiritualitySection];
+    return [...NAV_STATIC.slice(0, idx), spiritualitySection, ...NAV_STATIC.slice(idx)];
+  }, [spiritualPath]);
+
   const [dark, setDark] = useState(false);
   const [openSections, setOpenSections] = useState(() => {
     const defaults = {};
-    NAV.forEach((entry) => {
+    nav.forEach((entry) => {
       if (entry.section && entry.collapsible) {
         defaults[entry.section] = entry.defaultOpen ?? false;
       }
@@ -170,7 +202,7 @@ export default function Sidebar({ activePage, onNavigate }) {
 
   /* Auto-expand section when the active page is inside a collapsed section */
   useEffect(() => {
-    for (const entry of NAV) {
+    for (const entry of nav) {
       if (entry.items) {
         const match = entry.items.find((it) => it.id === activePage);
         if (match && entry.collapsible && !openSections[entry.section]) {
@@ -211,7 +243,7 @@ export default function Sidebar({ activePage, onNavigate }) {
       </div>
 
       <nav className="sidebarNav">
-        {NAV.map((entry, i) => {
+        {nav.map((entry, i) => {
           /* Top-level standalone item (Dashboard) */
           if (entry.id) {
             return renderItem(entry);

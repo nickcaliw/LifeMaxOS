@@ -50,7 +50,8 @@ function formatDate(dateStr) {
   });
 }
 
-export default function BibleStudyPage() {
+export default function BibleStudyPage({ collection = "biblestudy", title = "Bible Study", tagOptions }) {
+  const TAGS = tagOptions || TAG_OPTIONS;
   const [entries, setEntries] = useState([]);
   const [selectedId, setSelectedId] = useState(null);
   const [draft, setDraft] = useState(emptyEntry());
@@ -64,11 +65,11 @@ export default function BibleStudyPage() {
   // Load entries
   const refresh = useCallback(async () => {
     if (api) {
-      const list = (await api.list(COLLECTION)) || [];
+      const list = (await api.list(collection)) || [];
       list.sort((a, b) => (b.date || "").localeCompare(a.date || ""));
       setEntries(list);
     }
-  }, []);
+  }, [collection]);
 
   useEffect(() => {
     refresh();
@@ -125,10 +126,10 @@ export default function BibleStudyPage() {
       );
       if (saveTimer.current[id]) clearTimeout(saveTimer.current[id]);
       saveTimer.current[id] = setTimeout(() => {
-        if (api) api.save(id, COLLECTION, data);
+        if (api) api.save(id, collection, data);
       }, 300);
     },
-    []
+    [collection]
   );
 
   const updateField = (field, value) => {
@@ -148,7 +149,7 @@ export default function BibleStudyPage() {
   const addEntry = async () => {
     const id = genId();
     const data = emptyEntry();
-    if (api) await api.save(id, COLLECTION, data);
+    if (api) await api.save(id, collection, data);
     await refresh();
     openEntry({ id, ...data });
   };
@@ -512,7 +513,7 @@ export default function BibleStudyPage() {
       {/* Top bar */}
       <div className="bibleTopbar topbar">
         <div className="topbarLeft">
-          <h1 className="pageTitle">Bible Study</h1>
+          <h1 className="pageTitle">{title}</h1>
         </div>
         <div className="bibleTopbarActions nav">
           <button className="btn btnPrimary" onClick={addEntry}>
@@ -636,7 +637,7 @@ export default function BibleStudyPage() {
             <div className="bibleSection">
               <div className="bibleSectionTitle">Tags / Topics</div>
               <div className="bibleTagsWrap">
-                {TAG_OPTIONS.map((tag) => (
+                {TAGS.map((tag) => (
                   <button
                     key={tag}
                     type="button"

@@ -87,6 +87,7 @@ export default function App() {
   const todayStr = useMemo(() => ymd(new Date()), []);
   const [showOnboarding, setShowOnboarding] = useState(false);
   const [onboardingChecked, setOnboardingChecked] = useState(false);
+  const [spiritualPath, setSpiritualPath] = useState("christianity");
 
   // Check if onboarding is needed
   useEffect(() => {
@@ -111,10 +112,13 @@ export default function App() {
     checkOnboarding();
   }, []);
 
-  // Load saved weight unit preference
+  // Load saved settings
   useEffect(() => {
     window.settingsApi.get("weightUnit").then((saved) => {
       if (saved) setWeightUnit(saved);
+    });
+    window.settingsApi.get("spiritual_path").then((saved) => {
+      if (saved) setSpiritualPath(saved);
     });
   }, []);
   const toggleWeightUnit = () => {
@@ -228,7 +232,7 @@ export default function App() {
 
   return (
     <div className="appShell">
-      <Sidebar activePage={activePage} onNavigate={setActivePage} />
+      <Sidebar activePage={activePage} onNavigate={setActivePage} spiritualPath={spiritualPath} />
 
       <GlobalSearch
         open={searchOpen}
@@ -242,7 +246,7 @@ export default function App() {
 
         <ErrorBoundary key={activePage}>
         {activePage === "dashboard" ? (
-          <DashboardPage onNavigate={setActivePage} />
+          <DashboardPage onNavigate={setActivePage} spiritualPath={spiritualPath} />
         ) : activePage === "planner" ? (
           <>
             {/* Top bar */}
@@ -819,6 +823,12 @@ export default function App() {
           <CareerPage />
         ) : activePage === "biblestudy" ? (
           <BibleStudyPage />
+        ) : activePage === "quranstudy" ? (
+          <BibleStudyPage collection="quranstudy" title="Quran Study"
+            tagOptions={["Tawakkul", "Sabr", "Shukr", "Taqwa", "Ihsan", "Mercy", "Justice", "Knowledge", "Prayer", "Faith", "Forgiveness", "Charity", "Peace", "Guidance"]} />
+        ) : activePage === "gratitudepractice" ? (
+          <PrayerJournalPage collection="gratitude_entries" title="Gratitude Practice"
+            categories={["Self", "Relationships", "Abundance", "Health", "Universe"]} />
         ) : activePage === "routines" ? (
           <RoutinesPage />
         ) : activePage === "mood" ? (
@@ -835,10 +845,26 @@ export default function App() {
           <NetworkingPage />
         ) : activePage === "prayerjournal" ? (
           <PrayerJournalPage />
+        ) : activePage === "duajournal" ? (
+          <PrayerJournalPage collection="duas" title="Dua Journal"
+            categories={["Personal", "Family", "Ummah", "Dunya", "Shukr"]} />
+        ) : activePage === "affirmationjournal" ? (
+          <ScriptureMemoryPage collection="affirmation_entries" title="Affirmation Journal"
+            categories={["Abundance", "Self-Love", "Health", "Success", "Peace"]} />
+        ) : activePage === "energytracking" ? (
+          <PrayerJournalPage collection="energy_entries" title="Energy Tracking"
+            categories={["High Vibe", "Neutral", "Low Energy", "Blocked", "Flowing"]} />
         ) : activePage === "scripturememory" ? (
           <ScriptureMemoryPage />
+        ) : activePage === "surahmemory" ? (
+          <ScriptureMemoryPage collection="surahmemory" title="Surah Memory"
+            categories={["Short Surahs", "Duas", "Key Verses", "Pillars", "Guidance"]} />
         ) : activePage === "sermonnotes" ? (
           <SermonNotesPage />
+        ) : activePage === "khutbahnotes" ? (
+          <SermonNotesPage collection="khutbahnotes" title="Khutbah Notes" />
+        ) : activePage === "visionmeditation" ? (
+          <MeditationPage />
         ) : activePage === "bucketlist" ? (
           <BucketListPage />
         ) : activePage === "skills" ? (
@@ -858,7 +884,7 @@ export default function App() {
         ) : activePage === "subscriptions" ? (
           <SubscriptionsPage />
         ) : activePage === "settings" ? (
-          <SettingsPage />
+          <SettingsPage spiritualPath={spiritualPath} onSpiritualPathChange={setSpiritualPath} />
         ) : null}
         </ErrorBoundary>
       </div>

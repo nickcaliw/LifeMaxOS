@@ -14,7 +14,8 @@ const CATEGORY_COLORS = {
   World: "#009688", Thanks: "#ff9800",
 };
 
-export default function PrayerJournalPage() {
+export default function PrayerJournalPage({ collection = "prayers", title = "Prayer Journal", categories }) {
+  const CATS = categories || CATEGORIES;
   const [items, setItems] = useState([]);
   const [filter, setFilter] = useState("active"); // "active" | "answered" | "all"
   const [editingId, setEditingId] = useState(null);
@@ -22,16 +23,16 @@ export default function PrayerJournalPage() {
   const saveTimer = useRef({});
 
   const refresh = useCallback(async () => {
-    if (api) setItems(await api.list(COLLECTION) || []);
-  }, []);
+    if (api) setItems(await api.list(collection) || []);
+  }, [collection]);
 
   useEffect(() => { refresh(); }, [refresh]);
 
   const save = useCallback((id, data) => {
     setItems(prev => prev.map(item => item.id === id ? { ...item, ...data } : item));
     if (saveTimer.current[id]) clearTimeout(saveTimer.current[id]);
-    saveTimer.current[id] = setTimeout(() => { if (api) api.save(id, COLLECTION, data); }, 400);
-  }, []);
+    saveTimer.current[id] = setTimeout(() => { if (api) api.save(id, collection, data); }, 400);
+  }, [collection]);
 
   const addItem = async () => {
     const id = genId();
@@ -39,7 +40,7 @@ export default function PrayerJournalPage() {
       request: "", status: "active", category: "Personal",
       answerNotes: "", dateAdded: new Date().toISOString().slice(0, 10),
     };
-    if (api) await api.save(id, COLLECTION, data);
+    if (api) await api.save(id, collection, data);
     await refresh();
     setEditingId(id);
   };
@@ -94,7 +95,7 @@ export default function PrayerJournalPage() {
 
       <div className="topbar">
         <div className="topbarLeft">
-          <h1 className="pageTitle">Prayer Journal</h1>
+          <h1 className="pageTitle">{title}</h1>
           <div className="weekBadge">{activeCount} active</div>
         </div>
         <div className="nav">
@@ -148,7 +149,7 @@ export default function PrayerJournalPage() {
                         <label className="prayEditLabel">Category</label>
                         <select className="prayEditSelect" value={item.category || "Personal"}
                           onChange={e => save(item.id, { ...item, category: e.target.value })}>
-                          {CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
+                          {CATS.map(c => <option key={c} value={c}>{c}</option>)}
                         </select>
                       </div>
                       <div className="prayEditRow" style={{ flex: 1 }}>

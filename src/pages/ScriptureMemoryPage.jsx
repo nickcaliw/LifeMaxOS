@@ -11,7 +11,8 @@ const CATEGORY_COLORS = {
   Strength: "#e91e63", Love: "#ff5722",
 };
 
-export default function ScriptureMemoryPage() {
+export default function ScriptureMemoryPage({ collection = "scripturememory", title = "Scripture Memory", categories }) {
+  const CATS = categories || CATEGORIES;
   const [items, setItems] = useState([]);
   const [filter, setFilter] = useState("all"); // "all" | "memorized" | "learning"
   const [editingId, setEditingId] = useState(null);
@@ -19,16 +20,16 @@ export default function ScriptureMemoryPage() {
   const saveTimer = useRef({});
 
   const refresh = useCallback(async () => {
-    if (api) setItems(await api.list(COLLECTION) || []);
-  }, []);
+    if (api) setItems(await api.list(collection) || []);
+  }, [collection]);
 
   useEffect(() => { refresh(); }, [refresh]);
 
   const save = useCallback((id, data) => {
     setItems(prev => prev.map(item => item.id === id ? { ...item, ...data } : item));
     if (saveTimer.current[id]) clearTimeout(saveTimer.current[id]);
-    saveTimer.current[id] = setTimeout(() => { if (api) api.save(id, COLLECTION, data); }, 400);
-  }, []);
+    saveTimer.current[id] = setTimeout(() => { if (api) api.save(id, collection, data); }, 400);
+  }, [collection]);
 
   const addItem = async () => {
     const id = genId();
@@ -36,7 +37,7 @@ export default function ScriptureMemoryPage() {
       reference: "", text: "", category: "Promises",
       memorized: false, lastReviewed: "",
     };
-    if (api) await api.save(id, COLLECTION, data);
+    if (api) await api.save(id, collection, data);
     await refresh();
     setEditingId(id);
   };
@@ -108,7 +109,7 @@ export default function ScriptureMemoryPage() {
 
       <div className="topbar">
         <div className="topbarLeft">
-          <h1 className="pageTitle">Scripture Memory</h1>
+          <h1 className="pageTitle">{title}</h1>
           <div className="weekBadge">{items.length} verses</div>
         </div>
         <div className="nav">
@@ -174,7 +175,7 @@ export default function ScriptureMemoryPage() {
                         <label className="smEditLabel">Category</label>
                         <select className="smEditSelect" value={item.category || "Promises"}
                           onChange={e => save(item.id, { ...item, category: e.target.value })}>
-                          {CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
+                          {CATS.map(c => <option key={c} value={c}>{c}</option>)}
                         </select>
                       </div>
                       <div className="smEditRow" style={{ flex: 1 }}>

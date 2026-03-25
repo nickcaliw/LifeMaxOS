@@ -5,7 +5,7 @@ import { defaultHabits, progressFor, currentStreakEndingOn, bestStreakForHabit }
 import { useHabits } from "../hooks/useHabits.js";
 import { getWorkoutForDate } from "../lib/workouts.js";
 import { getQuoteForDate } from "../lib/quotes.js";
-import { getVerseForDate } from "../lib/bible.js";
+import { getContentLoader, SPIRITUAL_PATHS } from "../lib/spirituality.js";
 import { playBell } from "../lib/sounds.js";
 import AutoGrowTextarea from "../components/AutoGrowTextarea.jsx";
 import StarRating from "../components/StarRating.jsx";
@@ -37,7 +37,7 @@ function formatFocusTime(totalSeconds) {
   return `${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
 }
 
-export default function DashboardPage({ onNavigate }) {
+export default function DashboardPage({ onNavigate, spiritualPath: spPath }) {
   const today = useMemo(() => new Date(), []);
   const todayStr = useMemo(() => ymd(today), [today]);
   const greeting = useMemo(() => {
@@ -250,7 +250,13 @@ export default function DashboardPage({ onNavigate }) {
 
   const workout = useMemo(() => getWorkoutForDate(today), [today]);
   const quote = useMemo(() => getQuoteForDate(today), [today]);
-  const verse = useMemo(() => getVerseForDate(today), [today]);
+  const spiritualPath = spPath || "christianity";
+  const [spiritualContent, setSpiritualContent] = useState(null);
+  useEffect(() => {
+    const loader = getContentLoader(spiritualPath);
+    loader(today).then(setSpiritualContent);
+  }, [spiritualPath, today]);
+  const spiritualTitle = SPIRITUAL_PATHS[spiritualPath]?.dashboardTitle || "Daily Quote";
 
   const habitsTotal = HABITS_LIST.length;
   let habitsDone = 0;
@@ -484,10 +490,12 @@ export default function DashboardPage({ onNavigate }) {
           )}
 
           {/* Bible Verse */}
-          <div className="dashBible">
-            <div className="dashBibleVerse">"{verse.verse}"</div>
-            <div className="dashBibleRef">-- {verse.reference}</div>
-          </div>
+          {spiritualContent && (
+            <div className="dashBible">
+              <div className="dashBibleVerse">"{spiritualContent.verse || spiritualContent.text}"</div>
+              <div className="dashBibleRef">-- {spiritualContent.reference || spiritualContent.author}</div>
+            </div>
+          )}
 
           {/* Score Breakdown (toggled) */}
           {showScoreBreakdown && (
