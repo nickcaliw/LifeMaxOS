@@ -7,6 +7,9 @@ import {
   createEmptyLog,
 } from "../lib/workouts.js";
 import { parseHevyCsv } from "../lib/hevyCsv.js";
+import ActiveWorkout from "../components/ActiveWorkout.jsx";
+import WorkoutOnboarding from "../components/WorkoutOnboarding.jsx";
+import { useWorkoutProgram } from "../hooks/useWorkoutProgram.js";
 
 const api = typeof window !== "undefined" ? window.workoutApi : null;
 const dialogApi = typeof window !== "undefined" ? window.dialogApi : null;
@@ -52,7 +55,10 @@ export default function WorkoutsPage() {
   const [chartView, setChartView] = useState("week");
   const [monthDate, setMonthDate] = useState(new Date(today.getFullYear(), today.getMonth(), 1));
   const [monthLogs, setMonthLogs] = useState({});
+  const [activeWorkoutMode, setActiveWorkoutMode] = useState(false);
 
+  const { program, hasProgram, saveProgram, loading: programLoading } = useWorkoutProgram();
+  const [showOnboarding, setShowOnboarding] = useState(false);
   const { logs, saveLog, reload } = useWorkoutLogs(weekStart);
 
   // Load month data
@@ -233,14 +239,29 @@ export default function WorkoutsPage() {
     return { workoutDays: workoutDays.length, completed: completed.length, total: valid.length };
   }, [monthDays]);
 
+  // Show workout onboarding for new users or when requested
+  if (showOnboarding || (!programLoading && !hasProgram)) {
+    return (
+      <WorkoutOnboarding onComplete={(prog) => {
+        saveProgram(prog);
+        setShowOnboarding(false);
+      }} />
+    );
+  }
+
   return (
     <div className="workoutsPage">
       <div className="topbar">
         <div className="topbarLeft">
           <h1 className="pageTitle">Workouts</h1>
-          <div className="weekBadge">{PROGRAM_NAME}</div>
+          <div className="weekBadge">{program?.split?.toUpperCase() || PROGRAM_NAME}</div>
         </div>
         <div className="nav">
+          <button className="btn" onClick={() => setShowOnboarding(true)} title="Change Program" type="button" style={{ marginRight: 4 }}>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <circle cx="12" cy="12" r="3" /><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
+            </svg>
+          </button>
           <button className="btn" onClick={importHevyCsv} title="Import Hevy CSV">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
@@ -329,13 +350,22 @@ export default function WorkoutsPage() {
               </div>
               <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
                 {isHevyImport && <span className="woHevyLabel">Hevy Import</span>}
+                {!isRestDay && !log?.completed && (
+                  <button
+                    className="btn btnPrimary"
+                    onClick={() => setActiveWorkoutMode(true)}
+                    type="button"
+                  >
+                    Start Workout
+                  </button>
+                )}
                 {!isRestDay && (
                   <button
-                    className={`btn ${log?.completed ? "woCompletedBtn" : "btnPrimary"}`}
+                    className={`btn ${log?.completed ? "woCompletedBtn" : ""}`}
                     onClick={toggleCompleted}
                     type="button"
                   >
-                    {log?.completed ? "\u2713 Completed" : "Mark Complete"}
+                    {log?.completed ? "✓ Completed" : "Mark Complete"}
                   </button>
                 )}
               </div>
@@ -478,6 +508,19 @@ export default function WorkoutsPage() {
             </div>
           </div>
         </div>
+      )}
+      {/* Active Workout Overlay */}
+      {activeWorkoutMode && template && (
+        <ActiveWorkout
+          workout={template}
+          previousData={null}
+          onComplete={(result) => {
+            saveLog(selectedDate, result);
+            setActiveWorkoutMode(false);
+            reload();
+          }}
+          onCancel={() => setActiveWorkoutMode(false)}
+        />
       )}
     </div>
   );

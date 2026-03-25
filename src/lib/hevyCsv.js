@@ -110,9 +110,15 @@ export function parseHevyCsv(csvText) {
       workout.exerciseOrder.push(exerciseName);
     }
 
+    const rpeVal = fields[iRpe] ? parseFloat(fields[iRpe]) : null;
+    const rir = rpeVal && !isNaN(rpeVal) ? Math.max(0, Math.round(10 - rpeVal)) : null;
+    const setType = fields[iSetType]?.trim() || "working";
+
     workout.exercises[exerciseName].push({
       weight: weight || "",
       reps: reps || "",
+      rir: rir,
+      setType: setType === "warmup" ? "warmup" : "working",
     });
   }
 
