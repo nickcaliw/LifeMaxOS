@@ -8,6 +8,30 @@ contextBridge.exposeInMainWorld("plannerApi", {
 contextBridge.exposeInMainWorld("workoutApi", {
   get: inv("workout:get"), save: inv("workout:save"), getRange: inv("workout:getRange"), allDates: inv("workout:allDates"),
 });
+contextBridge.exposeInMainWorld("syncApi", {
+  get: inv("sync:get"), save: inv("sync:save"), getAll: inv("sync:getAll"),
+});
+contextBridge.exposeInMainWorld("trackingApi", {
+  add: inv("tracking:add"), get: inv("tracking:get"),
+});
+contextBridge.exposeInMainWorld("healthSyncApi", {
+  autoSync: inv("health:autoSync"), syncFile: inv("health:syncFile"),
+});
+contextBridge.exposeInMainWorld("dailyPlanApi", {
+  get: inv("dailyplan:get"), save: inv("dailyplan:save"), getRange: inv("dailyplan:getRange"),
+});
+contextBridge.exposeInMainWorld("weeklyPlanApi", {
+  get: inv("weeklyplan:get"), save: inv("weeklyplan:save"),
+});
+contextBridge.exposeInMainWorld("planApi", {
+  getActive: inv("plan:getActive"), get: inv("plan:get"),
+  save: inv("plan:save"), deactivateAll: inv("plan:deactivateAll"),
+});
+contextBridge.exposeInMainWorld("scheduleApi", {
+  getDate: inv("schedule:getDate"), getRange: inv("schedule:getRange"),
+  save: inv("schedule:save"), deleteForPlan: inv("schedule:deleteForPlan"),
+  clearFuture: inv("schedule:clearFuture"), bulkInsert: inv("schedule:bulkInsert"),
+});
 contextBridge.exposeInMainWorld("journalApi", {
   get: inv("journal:get"), save: inv("journal:save"), list: inv("journal:list"),
 });

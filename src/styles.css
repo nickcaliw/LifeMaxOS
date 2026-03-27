@@ -562,6 +562,36 @@ body{
   grid-template-columns: 1fr 1fr;
   gap: 8px;
 }
+.healthGrid{
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 6px;
+}
+.healthStat{
+  background: var(--bg);
+  border: 1px solid var(--line2);
+  border-radius: 8px;
+  padding: 8px 6px;
+  text-align: center;
+}
+.healthStatValue{
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--text);
+  line-height: 1.2;
+}
+.healthStatUnit{
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--muted);
+}
+.healthStatLabel{
+  font-size: 10px;
+  color: var(--muted);
+  margin-top: 2px;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+}
 .weightGrid{
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -1408,7 +1438,7 @@ body{
 }
 .woSetHeader{
   display: grid;
-  grid-template-columns: 40px 1fr 1fr;
+  grid-template-columns: 40px 1fr 1fr 1fr;
   gap: 8px;
   font-size: 10.5px;
   font-weight: 700;
@@ -1421,7 +1451,7 @@ body{
 }
 .woSetRow{
   display: grid;
-  grid-template-columns: 40px 1fr 1fr;
+  grid-template-columns: 40px 1fr 1fr 1fr;
   gap: 8px;
   align-items: center;
   padding: 4px 0;
@@ -2196,6 +2226,43 @@ body{
   flex-direction: column;
   overflow: hidden;
 }
+/* Quick stats row */
+.dashQuickStats{
+  display: flex;
+  gap: 8px;
+  margin-bottom: 14px;
+  flex-wrap: wrap;
+}
+.dashQStat{
+  flex: 1;
+  min-width: 70px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 10px 8px;
+  background: var(--paper);
+  border: 1px solid var(--line2);
+  border-radius: 10px;
+  cursor: pointer;
+  font-family: var(--font);
+  transition: all 0.15s;
+}
+.dashQStat:hover{ background: rgba(255,255,255,0.9); border-color: var(--line); }
+.dashQStatLabel{
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+}
+.dashQStatVal{
+  font-size: 16px;
+  font-weight: 800;
+  color: var(--ink);
+  letter-spacing: -0.02em;
+}
+
 .dashGrid{
   display: grid;
   grid-template-columns: repeat(2, 1fr);
@@ -2350,6 +2417,15 @@ body{
 }
 
 /* Quote of the day */
+.dashQuotesBottom{
+  display: flex;
+  gap: 16px;
+  padding: 0 24px 32px;
+}
+.dashQuotesBottom .dashQuote,
+.dashQuotesBottom .dashBible{
+  flex: 1;
+}
 .dashQuote{
   padding: 18px 22px;
   background: var(--dash-card-bg);
@@ -4061,6 +4137,85 @@ body{
 .sleepAvgValue { font-size: 28px; font-weight: 700; color: var(--text); }
 .sleepAvgLabel { font-size: 12px; color: var(--muted); margin-top: 2px; }
 
+/* Wake Time Trend */
+.sleepWakeTrend{
+  background: var(--paper);
+  border: 1px solid var(--line2);
+  border-radius: 12px;
+  padding: 16px;
+  margin-top: 16px;
+}
+.sleepWakeTrendHeader{
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+.sleepWakeTrendTitle{
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--ink);
+}
+.sleepWakeTrendMeta{
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--accent);
+}
+.sleepWakeStats{
+  display: flex;
+  gap: 16px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--muted);
+  margin-bottom: 12px;
+}
+.sleepWakeStats strong{
+  color: var(--ink);
+}
+.sleepWakeChart{
+  display: flex;
+  gap: 4px;
+  align-items: stretch;
+  height: 80px;
+}
+.sleepWakeBar{
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+}
+.sleepWakeBarTrack{
+  flex: 1;
+  width: 100%;
+  position: relative;
+  background: var(--chip);
+  border-radius: 4px;
+}
+.sleepWakeBarDot{
+  position: absolute;
+  left: 50%;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--accent);
+  transform: translateX(-50%);
+}
+.sleepWakeBarLabel{
+  font-size: 9px;
+  font-weight: 700;
+  color: var(--muted);
+}
+.sleepWakeChartAxis{
+  display: flex;
+  justify-content: space-between;
+  font-size: 9px;
+  font-weight: 600;
+  color: var(--muted);
+  margin-top: 4px;
+  padding: 0 4px;
+}
+
 .suppActions { display: flex; gap: 8px; margin-bottom: 16px; }
 .suppEmpty { font-size: 14px; color: var(--muted); padding: 20px; text-align: center; }
 .suppEditBtn { font-size: 12px; padding: 4px 10px; }
@@ -5031,7 +5186,7 @@ body{
 .settDesc {
   font-size: 13px; color: var(--muted); line-height: 1.4;
 }
-.settDivider {
+.settDivider, .settSepLine {
   height: 1px; background: var(--line2); margin: 0 20px;
 }
 
@@ -6329,6 +6484,24 @@ body{
   letter-spacing: 0.04em;
   color: var(--muted);
   margin-bottom: 6px;
+}
+
+.dpWakeRow{
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.dpWakeRow .dpLabel{
+  margin-bottom: 0;
+  white-space: nowrap;
+}
+.dpWakeInput{
+  width: 160px;
+  padding: 6px 12px;
+  font-size: 14px;
+  font-weight: 700;
+  text-align: center;
+  flex-shrink: 0;
 }
 
 /* ─── Mood / Energy / Tags (shared across Journal + Planner) ─── */

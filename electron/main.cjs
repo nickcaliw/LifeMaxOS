@@ -59,6 +59,240 @@ app.whenReady().then(() => {
   ipcMain.handle("workout:getRange", (_e, s, e) => db.getWorkoutLogsRange(s, e));
   ipcMain.handle("workout:allDates", () => db.getWorkoutLogDates());
 
+  // Sync State
+  ipcMain.handle("sync:get", (_e, source) => db.getSyncState(source));
+  ipcMain.handle("sync:save", (_e, source, data) => db.upsertSyncState(source, data));
+  ipcMain.handle("sync:getAll", () => db.getAllSyncStates());
+
+  // Tracking Imports
+  ipcMain.handle("tracking:add", (_e, id, source, domain, date, data, status) => db.addTrackingImport(id, source, domain, date, data, status));
+  ipcMain.handle("tracking:get", (_e, source, domain, start, end) => db.getTrackingImports(source, domain, start, end));
+
+  // Health Auto-Sync — find and process latest export automatically
+  ipcMain.handle("health:autoSync", async () => {
+    const os = require("os");
+    const homeDir = os.homedir();
+
+    // Check common locations for Apple Health export
+    const searchPaths = [
+      path.join(homeDir, "Downloads"),
+      path.join(homeDir, "Desktop"),
+      path.join(homeDir, "Documents"),
+    ];
+
+    let latestFile = null;
+    let latestMtime = 0;
+
+    for (const dir of searchPaths) {
+      try {
+        const files = fs.readdirSync(dir);
+        for (const file of files) {
+          if (file.toLowerCase().includes("export") && (file.endsWith(".zip") || file.endsWith(".xml"))) {
+            const fullPath = path.join(dir, file);
+            const stat = fs.statSync(fullPath);
+            if (stat.mtimeMs > latestMtime) {
+              latestMtime = stat.mtimeMs;
+              latestFile = fullPath;
+            }
+          }
+        }
+      } catch { /* dir may not exist */ }
+    }
+
+    if (!latestFile) return { found: false, message: "No Apple Health export found" };
+
+    // Check if we already synced this file
+    const syncState = db.getSyncState("apple_health");
+    const fileId = `${latestFile}:${latestMtime}`;
+    if (syncState?.config?.lastFileId === fileId) {
+      return { found: true, alreadySynced: true, file: latestFile, message: "Already synced this export" };
+    }
+
+    return { found: true, alreadySynced: false, file: latestFile, mtime: latestMtime };
+  });
+
+  // Health: sync specific file (reuses existing parser but only recent days)
+  ipcMain.handle("health:syncFile", async (_e, filePath, daysBack) => {
+    const sax = require("sax");
+    const cutoffDate = new Date();
+    cutoffDate.setDate(cutoffDate.getDate() - (daysBack || 30));
+    const cutoffStr = cutoffDate.toISOString().slice(0, 10);
+
+    let inputStream;
+    if (filePath.endsWith(".zip")) {
+      const yauzl = require("yauzl");
+      inputStream = await new Promise((res, rej) => {
+        yauzl.open(filePath, { lazyEntries: true }, (err, zipfile) => {
+          if (err) return rej(err);
+          zipfile.readEntry();
+          zipfile.on("entry", (entry) => {
+            if (entry.fileName.endsWith("export.xml") || entry.fileName === "export.xml") {
+              zipfile.openReadStream(entry, (err2, stream) => {
+                if (err2) return rej(err2);
+                res(stream);
+              });
+            } else {
+              zipfile.readEntry();
+            }
+          });
+          zipfile.on("end", () => rej(new Error("No export.xml found")));
+        });
+      });
+    } else {
+      inputStream = fs.createReadStream(filePath, { encoding: "utf-8" });
+    }
+
+    const data = { sleep: {}, stepsBySource: {}, calBySource: {}, heartRate: {}, weight: {} };
+
+    return new Promise((resolve, reject) => {
+      const parser = sax.createStream(true, { trim: true });
+
+      parser.on("opentag", (node) => {
+        const tag = node.name;
+        const a = node.attributes;
+
+        if (tag === "Record") {
+          const type = a.type;
+          const value = parseFloat(a.value) || 0;
+          const startDate = a.startDate;
+          if (!startDate) return;
+          const dateStr = startDate.slice(0, 10);
+
+          // Only process recent data
+          if (dateStr < cutoffStr) return;
+
+          const source = a.sourceName || "unknown";
+
+          if (type === "HKQuantityTypeIdentifierStepCount") {
+            if (!data.stepsBySource[dateStr]) data.stepsBySource[dateStr] = {};
+            data.stepsBySource[dateStr][source] = (data.stepsBySource[dateStr][source] || 0) + Math.round(value);
+          }
+          else if (type === "HKQuantityTypeIdentifierActiveEnergyBurned") {
+            if (!data.calBySource[dateStr]) data.calBySource[dateStr] = {};
+            data.calBySource[dateStr][source] = (data.calBySource[dateStr][source] || 0) + Math.round(value);
+          }
+          else if (type === "HKQuantityTypeIdentifierHeartRate") {
+            if (!data.heartRate[dateStr]) data.heartRate[dateStr] = { sum: 0, count: 0, min: 999, max: 0 };
+            data.heartRate[dateStr].sum += value;
+            data.heartRate[dateStr].count++;
+            data.heartRate[dateStr].min = Math.min(data.heartRate[dateStr].min, value);
+            data.heartRate[dateStr].max = Math.max(data.heartRate[dateStr].max, value);
+          }
+          else if (type === "HKCategoryTypeIdentifierSleepAnalysis") {
+            const sVal = a.value || "";
+            if (sVal.includes("Asleep") || sVal === "HKCategoryValueSleepAnalysisInBed") {
+              const endDate = a.endDate;
+              if (!endDate) return;
+              const startTime = new Date(startDate.replace(" ", "T"));
+              const endTime = new Date(endDate.replace(" ", "T"));
+              const hours = (endTime - startTime) / (1000 * 60 * 60);
+              if (hours > 0 && hours < 24) {
+                if (!data.sleep[dateStr]) data.sleep[dateStr] = { hours: 0, bedtime: "", waketime: "" };
+                data.sleep[dateStr].hours += hours;
+                if (!data.sleep[dateStr].bedtime) {
+                  data.sleep[dateStr].bedtime = startDate.slice(11, 16);
+                  data.sleep[dateStr].waketime = endDate.slice(11, 16);
+                }
+              }
+            }
+          }
+          else if (type === "HKQuantityTypeIdentifierBodyMass") {
+            if (!data.weight[dateStr] || startDate > data.weight[dateStr].measuredAt) {
+              data.weight[dateStr] = { lbs: Math.round(value * 2.20462 * 10) / 10, measuredAt: startDate };
+            }
+          }
+        }
+      });
+
+      parser.on("end", () => {
+        // Dedup steps/calories
+        const steps = {};
+        for (const [date, sources] of Object.entries(data.stepsBySource)) {
+          steps[date] = { count: Math.max(...Object.values(sources)) };
+        }
+        const activeCalories = {};
+        for (const [date, sources] of Object.entries(data.calBySource)) {
+          activeCalories[date] = { total: Math.max(...Object.values(sources)) };
+        }
+        // Compute HR averages
+        for (const hr of Object.values(data.heartRate)) {
+          hr.avg = Math.round(hr.sum / hr.count);
+          hr.min = Math.round(hr.min);
+          hr.max = Math.round(hr.max);
+          delete hr.sum;
+          delete hr.count;
+        }
+        // Round sleep
+        for (const s of Object.values(data.sleep)) {
+          s.hours = Math.round(s.hours * 10) / 10;
+        }
+
+        // Persist to DB
+        for (const [date, s] of Object.entries(steps)) db.setSetting(`steps_${date}`, JSON.stringify(s));
+        for (const [date, cal] of Object.entries(activeCalories)) db.setSetting(`activecal_${date}`, JSON.stringify(cal));
+        for (const [date, hr] of Object.entries(data.heartRate)) db.setSetting(`heartrate_${date}`, JSON.stringify(hr));
+        for (const [date, sleep] of Object.entries(data.sleep)) {
+          if (sleep.hours > 0) db.upsertSleepLog(date, sleep);
+        }
+        for (const [date, w] of Object.entries(data.weight)) {
+          // Merge weight into body_stats
+          const existing = db.getBodyStat(date);
+          db.upsertBodyStat(date, { ...(existing || {}), weightAm: w.lbs });
+        }
+
+        // Update sync state
+        const stat = fs.statSync(filePath);
+        db.upsertSyncState("apple_health", {
+          last_sync_at: new Date().toISOString(),
+          last_sync_date: Object.keys(data.sleep).sort().pop() || null,
+          status: "idle",
+          config: { lastFileId: `${filePath}:${stat.mtimeMs}`, filePath },
+        });
+
+        const summary = {
+          sleepDays: Object.keys(data.sleep).length,
+          stepDays: Object.keys(steps).length,
+          heartRateDays: Object.keys(data.heartRate).length,
+          calorieDays: Object.keys(activeCalories).length,
+          weightDays: Object.keys(data.weight).length,
+        };
+
+        console.log("[health:syncFile] Done!", summary);
+        resolve({ ok: true, summary });
+      });
+
+      parser.on("error", (err) => {
+        parser._parser.error = null;
+        parser._parser.resume();
+      });
+
+      inputStream.pipe(parser);
+    });
+  });
+
+  // Life Orchestrator — Daily Plans
+  ipcMain.handle("dailyplan:get", (_e, date) => db.getDailyPlan(date));
+  ipcMain.handle("dailyplan:save", (_e, date, data, readiness, dayType, score, scoreBreakdown) => db.upsertDailyPlan(date, data, readiness, dayType, score, scoreBreakdown));
+  ipcMain.handle("dailyplan:getRange", (_e, s, e) => db.getDailyPlansRange(s, e));
+
+  // Life Orchestrator — Weekly Plans
+  ipcMain.handle("weeklyplan:get", (_e, weekStart) => db.getWeeklyPlan(weekStart));
+  ipcMain.handle("weeklyplan:save", (_e, weekStart, data, lastWeekScore, targetScore, insights) => db.upsertWeeklyPlan(weekStart, data, lastWeekScore, targetScore, insights));
+
+  // Workout Plans
+  ipcMain.handle("plan:getActive", () => db.getActiveWorkoutPlan());
+  ipcMain.handle("plan:get", (_e, id) => db.getWorkoutPlan(id));
+  ipcMain.handle("plan:save", (_e, id, data, status) => db.upsertWorkoutPlan(id, data, status));
+  ipcMain.handle("plan:deactivateAll", () => db.deactivateAllWorkoutPlans());
+
+  // Workout Schedule
+  ipcMain.handle("schedule:getDate", (_e, date) => db.getScheduleForDate(date));
+  ipcMain.handle("schedule:getRange", (_e, s, e) => db.getScheduleRange(s, e));
+  ipcMain.handle("schedule:save", (_e, id, planId, date, data, status) => db.upsertScheduleEntry(id, planId, date, data, status));
+  ipcMain.handle("schedule:deleteForPlan", (_e, planId) => db.deleteScheduleForPlan(planId));
+  ipcMain.handle("schedule:clearFuture", (_e, planId, fromDate) => db.clearFutureSchedule(planId, fromDate));
+  ipcMain.handle("schedule:bulkInsert", (_e, entries) => db.bulkInsertSchedule(entries));
+
   // Journal
   ipcMain.handle("journal:get", (_e, date) => db.getJournalEntry(date));
   ipcMain.handle("journal:save", (_e, date, content, mood) => db.upsertJournalEntry(date, content, mood));
@@ -313,140 +547,186 @@ app.whenReady().then(() => {
     if (result.canceled || !result.filePaths.length) return null;
 
     const filePath = result.filePaths[0];
-    let xmlText;
+    console.log("[health:import] Starting import of", filePath);
+    const sax = require("sax");
 
+    // Get a readable stream — streaming from zip or raw XML file
+    let inputStream;
     if (filePath.endsWith(".zip")) {
-      // Extract export.xml from zip
-      const AdmZip = require("adm-zip");
-      const zip = new AdmZip(filePath);
-      const entry = zip.getEntries().find(e =>
-        e.entryName === "apple_health_export/export.xml" ||
-        e.entryName === "export.xml" ||
-        e.entryName.endsWith("/export.xml")
-      );
-      if (!entry) return { error: "No export.xml found in zip file" };
-      xmlText = entry.getData().toString("utf-8");
+      const yauzl = require("yauzl");
+      // Open zip and find export.xml entry, stream it without loading all into memory
+      inputStream = await new Promise((res, rej) => {
+        yauzl.open(filePath, { lazyEntries: true }, (err, zipfile) => {
+          if (err) return rej(err);
+          zipfile.readEntry();
+          zipfile.on("entry", (entry) => {
+            if (
+              entry.fileName === "apple_health_export/export.xml" ||
+              entry.fileName === "export.xml" ||
+              entry.fileName.endsWith("/export.xml")
+            ) {
+              zipfile.openReadStream(entry, (err2, stream) => {
+                if (err2) return rej(err2);
+                res(stream);
+              });
+            } else {
+              zipfile.readEntry();
+            }
+          });
+          zipfile.on("end", () => rej(new Error("No export.xml found in zip file")));
+        });
+      });
     } else {
-      xmlText = fs.readFileSync(filePath, "utf-8");
+      inputStream = fs.createReadStream(filePath, { encoding: "utf-8" });
     }
 
-    // Parse XML — stream-based to handle large files
     const data = {
-      sleep: {},      // date → { hours, bedtime, waketime, quality }
-      steps: {},      // date → { count }
-      workouts: {},   // date → { type, duration, calories, distance }
-      heartRate: {},  // date → { avg, min, max }
-      activeCalories: {}, // date → { total }
+      sleep: {},
+      // Track by source to deduplicate (Apple Watch + iPhone record overlapping steps/calories)
+      stepsBySource: {},     // date → source → count
+      calBySource: {},       // date → source → total
+      heartRate: {},
+      workouts: {},
     };
 
-    // Simple regex-based parsing for Record elements (faster than full XML parser)
-    const recordRegex = /<Record\s+([^>]+)\/>/g;
-    const attrRegex = /(\w+)="([^"]*)"/g;
+    return new Promise((resolve, reject) => {
+      const parser = sax.createStream(true, { trim: true });
 
-    let match;
-    while ((match = recordRegex.exec(xmlText)) !== null) {
-      const attrs = {};
-      let attrMatch;
-      while ((attrMatch = attrRegex.exec(match[1])) !== null) {
-        attrs[attrMatch[1]] = attrMatch[2];
-      }
+      parser.on("opentag", (node) => {
+        const tag = node.name;
+        const a = node.attributes;
 
-      const type = attrs.type;
-      const value = parseFloat(attrs.value) || 0;
-      const startDate = attrs.startDate;
-      if (!startDate) continue;
+        if (tag === "Record") {
+          const type = a.type;
+          const value = parseFloat(a.value) || 0;
+          const startDate = a.startDate;
+          if (!startDate) return;
+          const dateStr = startDate.slice(0, 10);
+          const source = a.sourceName || "unknown";
 
-      // Extract date (YYYY-MM-DD) from "2026-03-24 07:30:00 -0400" format
-      const dateStr = startDate.slice(0, 10);
-
-      if (type === "HKQuantityTypeIdentifierStepCount") {
-        data.steps[dateStr] = data.steps[dateStr] || { count: 0 };
-        data.steps[dateStr].count += Math.round(value);
-      }
-      else if (type === "HKQuantityTypeIdentifierActiveEnergyBurned") {
-        data.activeCalories[dateStr] = data.activeCalories[dateStr] || { total: 0 };
-        data.activeCalories[dateStr].total += Math.round(value);
-      }
-      else if (type === "HKQuantityTypeIdentifierHeartRate") {
-        if (!data.heartRate[dateStr]) data.heartRate[dateStr] = { sum: 0, count: 0, min: 999, max: 0 };
-        data.heartRate[dateStr].sum += value;
-        data.heartRate[dateStr].count++;
-        data.heartRate[dateStr].min = Math.min(data.heartRate[dateStr].min, value);
-        data.heartRate[dateStr].max = Math.max(data.heartRate[dateStr].max, value);
-      }
-    }
-
-    // Compute heart rate averages
-    for (const [date, hr] of Object.entries(data.heartRate)) {
-      hr.avg = Math.round(hr.sum / hr.count);
-      hr.min = Math.round(hr.min);
-      hr.max = Math.round(hr.max);
-      delete hr.sum;
-      delete hr.count;
-    }
-
-    // Parse sleep analysis from ActivitySummary or SleepAnalysis records
-    const sleepRegex = /<Record\s+type="HKCategoryTypeIdentifierSleepAnalysis"[^>]*startDate="([^"]*)"[^>]*endDate="([^"]*)"[^>]*value="([^"]*)"[^>]*\/>/g;
-    while ((match = sleepRegex.exec(xmlText)) !== null) {
-      const start = match[1];
-      const end = match[2];
-      const value = match[3];
-      // InBed or AsleepUnspecified/AsleepCore/AsleepDeep/AsleepREM
-      if (value.includes("Asleep") || value === "HKCategoryValueSleepAnalysisInBed") {
-        const dateStr = start.slice(0, 10);
-        const startTime = new Date(start.replace(" ", "T"));
-        const endTime = new Date(end.replace(" ", "T"));
-        const hours = (endTime - startTime) / (1000 * 60 * 60);
-        if (hours > 0 && hours < 24) {
-          if (!data.sleep[dateStr]) data.sleep[dateStr] = { hours: 0, bedtime: "", waketime: "" };
-          data.sleep[dateStr].hours += hours;
-          if (!data.sleep[dateStr].bedtime) {
-            data.sleep[dateStr].bedtime = start.slice(11, 16);
-            data.sleep[dateStr].waketime = end.slice(11, 16);
+          if (type === "HKQuantityTypeIdentifierStepCount") {
+            if (!data.stepsBySource[dateStr]) data.stepsBySource[dateStr] = {};
+            data.stepsBySource[dateStr][source] = (data.stepsBySource[dateStr][source] || 0) + Math.round(value);
+          }
+          else if (type === "HKQuantityTypeIdentifierActiveEnergyBurned") {
+            if (!data.calBySource[dateStr]) data.calBySource[dateStr] = {};
+            data.calBySource[dateStr][source] = (data.calBySource[dateStr][source] || 0) + Math.round(value);
+          }
+          else if (type === "HKQuantityTypeIdentifierHeartRate") {
+            if (!data.heartRate[dateStr]) data.heartRate[dateStr] = { sum: 0, count: 0, min: 999, max: 0 };
+            data.heartRate[dateStr].sum += value;
+            data.heartRate[dateStr].count++;
+            data.heartRate[dateStr].min = Math.min(data.heartRate[dateStr].min, value);
+            data.heartRate[dateStr].max = Math.max(data.heartRate[dateStr].max, value);
+          }
+          else if (type === "HKCategoryTypeIdentifierSleepAnalysis") {
+            const sVal = a.value || "";
+            if (sVal.includes("Asleep") || sVal === "HKCategoryValueSleepAnalysisInBed") {
+              const endDate = a.endDate;
+              if (!endDate) return;
+              const startTime = new Date(startDate.replace(" ", "T"));
+              const endTime = new Date(endDate.replace(" ", "T"));
+              const hours = (endTime - startTime) / (1000 * 60 * 60);
+              if (hours > 0 && hours < 24) {
+                if (!data.sleep[dateStr]) data.sleep[dateStr] = { hours: 0, bedtime: "", waketime: "" };
+                data.sleep[dateStr].hours += hours;
+                if (!data.sleep[dateStr].bedtime) {
+                  data.sleep[dateStr].bedtime = startDate.slice(11, 16);
+                  data.sleep[dateStr].waketime = endDate.slice(11, 16);
+                }
+              }
+            }
           }
         }
-      }
-    }
+        else if (tag === "Workout") {
+          const startDate = a.startDate;
+          if (!startDate) return;
+          const dateStr = startDate.slice(0, 10);
+          const duration = parseFloat(a.duration) || 0;
+          const calories = parseFloat(a.totalEnergyBurned) || 0;
+          const distance = parseFloat(a.totalDistance) || 0;
+          const activityType = (a.workoutActivityType || "").replace("HKWorkoutActivityType", "");
 
-    // Round sleep hours
-    for (const [, s] of Object.entries(data.sleep)) {
-      s.hours = Math.round(s.hours * 10) / 10;
-    }
-
-    // Parse Workout elements
-    const workoutRegex = /<Workout\s+([^>]+)>/g;
-    while ((match = workoutRegex.exec(xmlText)) !== null) {
-      const attrs = {};
-      let attrMatch;
-      while ((attrMatch = attrRegex.exec(match[1])) !== null) {
-        attrs[attrMatch[1]] = attrMatch[2];
-      }
-      const startDate = attrs.startDate;
-      if (!startDate) continue;
-      const dateStr = startDate.slice(0, 10);
-      const duration = parseFloat(attrs.duration) || 0;
-      const calories = parseFloat(attrs.totalEnergyBurned) || 0;
-      const distance = parseFloat(attrs.totalDistance) || 0;
-      const activityType = (attrs.workoutActivityType || "").replace("HKWorkoutActivityType", "");
-
-      if (!data.workouts[dateStr]) data.workouts[dateStr] = [];
-      data.workouts[dateStr].push({
-        type: activityType,
-        durationMin: Math.round(duration),
-        calories: Math.round(calories),
-        distanceKm: Math.round(distance * 100) / 100,
+          if (!data.workouts[dateStr]) data.workouts[dateStr] = [];
+          data.workouts[dateStr].push({
+            type: activityType,
+            durationMin: Math.round(duration),
+            calories: Math.round(calories),
+            distanceKm: Math.round(distance * 100) / 100,
+          });
+        }
       });
-    }
 
-    const summary = {
-      sleepDays: Object.keys(data.sleep).length,
-      stepDays: Object.keys(data.steps).length,
-      workoutDays: Object.keys(data.workouts).length,
-      heartRateDays: Object.keys(data.heartRate).length,
-      calorieDays: Object.keys(data.activeCalories).length,
-    };
+      parser.on("end", () => {
+        console.log("[health:import] Parsing complete, deduplicating & saving...");
 
-    return { data, summary };
+        // Deduplicate steps/calories: for each day, take the max single-source total
+        // This mimics Apple Health's source priority deduplication
+        const steps = {};
+        for (const [date, sources] of Object.entries(data.stepsBySource)) {
+          const maxSource = Math.max(...Object.values(sources));
+          steps[date] = { count: maxSource };
+        }
+        const activeCalories = {};
+        for (const [date, sources] of Object.entries(data.calBySource)) {
+          const maxSource = Math.max(...Object.values(sources));
+          activeCalories[date] = { total: maxSource };
+        }
+
+        console.log("[health:import] Steps days:", Object.keys(steps).length,
+          "HR days:", Object.keys(data.heartRate).length,
+          "Cal days:", Object.keys(activeCalories).length,
+          "Sleep days:", Object.keys(data.sleep).length,
+          "Workout days:", Object.keys(data.workouts).length);
+
+        // Compute heart rate averages
+        for (const hr of Object.values(data.heartRate)) {
+          hr.avg = Math.round(hr.sum / hr.count);
+          hr.min = Math.round(hr.min);
+          hr.max = Math.round(hr.max);
+          delete hr.sum;
+          delete hr.count;
+        }
+        // Round sleep hours
+        for (const s of Object.values(data.sleep)) {
+          s.hours = Math.round(s.hours * 10) / 10;
+        }
+
+        // Persist directly to DB from main process (avoids thousands of IPC round-trips)
+        for (const [date, s] of Object.entries(steps)) {
+          db.setSetting(`steps_${date}`, JSON.stringify(s));
+        }
+        for (const [date, cal] of Object.entries(activeCalories)) {
+          db.setSetting(`activecal_${date}`, JSON.stringify(cal));
+        }
+        for (const [date, hr] of Object.entries(data.heartRate)) {
+          db.setSetting(`heartrate_${date}`, JSON.stringify(hr));
+        }
+        for (const [date, sleep] of Object.entries(data.sleep)) {
+          if (sleep.hours > 0) db.upsertSleepLog(date, sleep);
+        }
+
+        const summary = {
+          sleepDays: Object.keys(data.sleep).length,
+          stepDays: Object.keys(steps).length,
+          workoutDays: Object.keys(data.workouts).length,
+          heartRateDays: Object.keys(data.heartRate).length,
+          calorieDays: Object.keys(activeCalories).length,
+        };
+
+        console.log("[health:import] Done! Summary:", summary);
+        resolve({ data: null, summary });
+      });
+
+      parser.on("error", (err) => {
+        console.log("[health:import] SAX parse error (resuming):", err.message);
+        // SAX is lenient — resume on non-fatal parse errors
+        parser._parser.error = null;
+        parser._parser.resume();
+      });
+
+      inputStream.pipe(parser);
+    });
   });
 
   // Print to PDF

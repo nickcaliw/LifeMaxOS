@@ -5,6 +5,8 @@ import ConfirmDialog from "../components/ConfirmDialog.jsx";
 
 const settingsApi = typeof window !== "undefined" ? window.settingsApi : null;
 const dataApi = typeof window !== "undefined" ? window.dataApi : null;
+const syncApiRef = typeof window !== "undefined" ? window.syncApi : null;
+const healthSyncApiRef = typeof window !== "undefined" ? window.healthSyncApi : null;
 const notificationApi = typeof window !== "undefined" ? window.notificationApi : null;
 const dialogApi = typeof window !== "undefined" ? window.dialogApi : null;
 const plannerApi = typeof window !== "undefined" ? window.plannerApi : null;
@@ -163,41 +165,11 @@ export default function SettingsPage({ spiritualPath, onSpiritualPathChange }) {
       if (!result) { setHealthImporting(false); return; } // cancelled
       if (result.error) { showMessage("error", result.error); setHealthImporting(false); return; }
 
-      const { data, summary } = result;
-      let imported = 0;
-
-      // Import sleep data
-      if (sleepApi && data.sleep) {
-        for (const [date, sleep] of Object.entries(data.sleep)) {
-          if (sleep.hours > 0) {
-            await sleepApi.save(date, sleep);
-            imported++;
-          }
-        }
-      }
-
-      // Import steps + active calories into settings (for dashboard display)
-      if (settingsApi) {
-        if (data.steps) {
-          for (const [date, steps] of Object.entries(data.steps)) {
-            await settingsApi.set(`steps_${date}`, JSON.stringify(steps));
-            imported++;
-          }
-        }
-        if (data.activeCalories) {
-          for (const [date, cal] of Object.entries(data.activeCalories)) {
-            await settingsApi.set(`activecal_${date}`, JSON.stringify(cal));
-          }
-        }
-        if (data.heartRate) {
-          for (const [date, hr] of Object.entries(data.heartRate)) {
-            await settingsApi.set(`heartrate_${date}`, JSON.stringify(hr));
-          }
-        }
-      }
+      const { summary } = result;
+      const total = summary.stepDays + summary.sleepDays + summary.heartRateDays + summary.calorieDays + summary.workoutDays;
 
       setHealthResult(summary);
-      showMessage("success", `Imported ${imported} records from Apple Health!`);
+      showMessage("success", `Imported ${total} day-records from Apple Health!`);
     } catch (err) {
       showMessage("error", "Import failed: " + (err.message || err));
     } finally {
@@ -294,6 +266,65 @@ export default function SettingsPage({ spiritualPath, onSpiritualPathChange }) {
                 </button>
               ))}
             </div>
+          </div>
+        </section>
+
+        {/* Tracking Sources */}
+        <section className="settSection">
+          <h2 className="settSectionTitle">Tracking Sources</h2>
+          <div className="settCard">
+            <div className="settDesc" style={{ padding: "0 0 12px" }}>
+              Connect external sources to automatically track your life data.
+            </div>
+            <TrackingSourceRow
+              name="Apple Health"
+              icon="\u231A"
+              desc="Sleep, steps, weight, heart rate, workouts"
+              onSync={async () => {
+                if (!healthSyncApiRef) return;
+                const check = await healthSyncApiRef.autoSync();
+                if (!check.found) {
+                  showMessage("error", "No Apple Health export found in Downloads, Desktop, or Documents.");
+                  return;
+                }
+                if (check.alreadySynced) {
+                  showMessage("success", "Apple Health is already up to date.");
+                  return;
+                }
+                showMessage("success", "Syncing Apple Health data...");
+                const result = await healthSyncApiRef.syncFile(check.file, 90);
+                if (result?.ok) {
+                  const s = result.summary;
+                  showMessage("success", `Synced: ${s.sleepDays} sleep, ${s.stepDays} steps, ${s.weightDays} weight, ${s.heartRateDays} heart rate days`);
+                }
+              }}
+            />
+            <div className="settSepLine" />
+            <TrackingSourceRow
+              name="Hevy"
+              icon="\u{1F3CB}\uFE0F"
+              desc="Workout sets, reps, and weights via CSV import"
+              buttonLabel="Import CSV"
+              onSync={null}
+              note="Use the Import Hevy button on the Workouts page"
+            />
+            <div className="settSepLine" />
+            <TrackingSourceRow
+              name="MyFitnessPal"
+              icon="\u{1F34E}"
+              desc="Calories, protein, carbs, fat from PDF export"
+              buttonLabel="Import PDF"
+              onSync={handleMfpImport}
+            />
+            <div className="settSepLine" />
+            <TrackingSourceRow
+              name="Apple Calendar"
+              icon="\u{1F4C5}"
+              desc="Events and schedule for auto-planning"
+              buttonLabel="Coming Soon"
+              onSync={null}
+              disabled
+            />
           </div>
         </section>
 
@@ -587,6 +618,43 @@ export default function SettingsPage({ spiritualPath, onSpiritualPathChange }) {
           </div>
         </section>
       </div>
+    </div>
+  );
+}
+
+function TrackingSourceRow({ name, icon, desc, onSync, buttonLabel, note, disabled }) {
+  const [syncing, setSyncing] = useState(false);
+  const handleClick = async () => {
+    if (!onSync || disabled) return;
+    setSyncing(true);
+    try { await onSync(); } catch {}
+    setSyncing(false);
+  };
+  return (
+    <div className="settRow">
+      <div className="settRowInfo" style={{ display: "flex", alignItems: "center", gap: 10 }}>
+        <span style={{ fontSize: 20 }}>{icon}</span>
+        <div>
+          <div className="settLabel">{name}</div>
+          <div className="settDesc">{desc}</div>
+          {note && <div className="settDesc" style={{ fontStyle: "italic", marginTop: 2 }}>{note}</div>}
+        </div>
+      </div>
+      {onSync && (
+        <button
+          className="btn btnPrimary"
+          onClick={handleClick}
+          disabled={syncing || disabled}
+          type="button"
+        >
+          {syncing ? "Syncing..." : buttonLabel || "Sync Now"}
+        </button>
+      )}
+      {!onSync && buttonLabel && (
+        <span style={{ fontSize: 12, fontWeight: 600, color: "var(--muted)", padding: "6px 12px", background: "var(--chip)", borderRadius: 8 }}>
+          {buttonLabel}
+        </span>
+      )}
     </div>
   );
 }

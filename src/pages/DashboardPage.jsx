@@ -9,6 +9,9 @@ import { getContentLoader, SPIRITUAL_PATHS } from "../lib/spirituality.js";
 import { playBell } from "../lib/sounds.js";
 import AutoGrowTextarea from "../components/AutoGrowTextarea.jsx";
 import StarRating from "../components/StarRating.jsx";
+import OrchestratorView from "../components/OrchestratorView.jsx";
+import useOrchestrator from "../hooks/useOrchestrator.js";
+import useHealthSync from "../hooks/useHealthSync.js";
 import { ConfettiCelebration, MilestoneToast } from "../components/Celebration.jsx";
 import { generateSmartInsights } from "../lib/smartInsights.js";
 
@@ -48,6 +51,8 @@ export default function DashboardPage({ onNavigate, spiritualPath: spPath }) {
   }, [today]);
 
   const { habits: HABITS_LIST } = useHabits();
+  const { plan: orchPlan, score: orchScore, loading: orchLoading } = useOrchestrator();
+  const { syncStatus: healthSync } = useHealthSync();
   const [userName, setUserName] = useState("");
 
   // ── Planner state (editable) ──
@@ -480,24 +485,61 @@ export default function DashboardPage({ onNavigate, spiritualPath: spPath }) {
 
       {/* ── Two-column body ── */}
       <div className="dashBody">
-        {/* ── LEFT COLUMN ── */}
+        {/* ── LEFT COLUMN: Life Orchestrator + Key Widgets ── */}
         <div className="dashLeft">
-          {/* Affirmation */}
-          {dailyAffirmation && (
-            <div className="dashAffirmation">
-              <div className="dashAffirmationText">{dailyAffirmation.text}</div>
-            </div>
+
+          {/* Orchestrator: Readiness + Priorities + Schedule + Habits + Alerts */}
+          {orchPlan ? (
+            <OrchestratorView plan={orchPlan} score={orchScore} onNavigate={onNavigate} />
+          ) : (
+            <>
+              {/* Fallback: show insights + reminders when orchestrator isn't ready */}
+              {dailyAffirmation && (
+                <div className="dashAffirmation">
+                  <div className="dashAffirmationText">{dailyAffirmation.text}</div>
+                </div>
+              )}
+              <div className="dashInsightsStack">
+                {insights.length > 0 && (
+                  <div className="dashInsights">
+                    <div className="dashInsightsTitle">Insights</div>
+                    {insights.slice(0, 5).map((tip, i) => (
+                      <div key={i} className={`dashInsightItem dashInsight-${tip.type}`}>
+                        <span className="dashInsightIcon">
+                          {tip.emoji || (tip.type === "good" ? "\u2713" : tip.type === "warn" ? "!" : "\u{1F4A1}")}
+                        </span>
+                        {tip.text}
+                      </div>
+                    ))}
+                  </div>
+                )}
+                {reminders.length > 0 ? (
+                  <div className="dashReminders">
+                    <div className="dashRemindersHeader">
+                      <div className="dashRemindersTitle">Reminders</div>
+                      <div className="dashRemindersBadge">{reminders.length}</div>
+                    </div>
+                    <div className="dashRemindersList">
+                      {reminders.map((r, i) => (
+                        <button key={i} className="dashReminderItem" onClick={() => onNavigate(r.page)} type="button">
+                          <span className="dashReminderIcon">{r.icon}</span>
+                          <span className="dashReminderText">{r.text}</span>
+                          <span className="dashReminderArrow">{"\u203A"}</span>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                ) : (
+                  <div className="dashReminders dashRemindersDone">
+                    <div className="dashRemindersDoneIcon">{"\u{1F389}"}</div>
+                    <div className="dashRemindersDoneText">All caught up!</div>
+                  </div>
+                )}
+              </div>
+            </>
           )}
 
-          {/* Bible Verse */}
-          {spiritualContent && (
-            <div className="dashBible">
-              <div className="dashBibleVerse">"{spiritualContent.verse || spiritualContent.text}"</div>
-              <div className="dashBibleRef">-- {spiritualContent.reference || spiritualContent.author}</div>
-            </div>
-          )}
-
-          {/* Score Breakdown (toggled) */}
+          {/* Score Breakdown (toggled from topbar) */}
           {showScoreBreakdown && (
             <div className="dashScoreBreakdown">
               <div className="dashScoreBreakdownTitle">Score Breakdown</div>
@@ -515,229 +557,103 @@ export default function DashboardPage({ onNavigate, spiritualPath: spPath }) {
             </div>
           )}
 
-          {/* Insights + Reminders */}
-          <div className="dashInsightsStack">
-            {insights.length > 0 && (
-              <div className="dashInsights">
-                <div className="dashInsightsTitle">Insights</div>
-                {insights.slice(0, 5).map((tip, i) => (
-                  <div key={i} className={`dashInsightItem dashInsight-${tip.type}`}>
-                    <span className="dashInsightIcon">
-                      {tip.emoji || (tip.type === "good" ? "✓" : tip.type === "warn" ? "!" : "💡")}
-                    </span>
-                    {tip.text}
-                  </div>
-                ))}
-              </div>
-            )}
-
-            {reminders.length > 0 ? (
-              <div className="dashReminders">
-                <div className="dashRemindersHeader">
-                  <div className="dashRemindersTitle">Reminders</div>
-                  <div className="dashRemindersBadge">{reminders.length}</div>
-                </div>
-                <div className="dashRemindersList">
-                  {reminders.map((r, i) => (
-                    <button key={i} className="dashReminderItem" onClick={() => onNavigate(r.page)} type="button">
-                      <span className="dashReminderIcon">{r.icon}</span>
-                      <span className="dashReminderText">{r.text}</span>
-                      <span className="dashReminderArrow">›</span>
-                    </button>
-                  ))}
-                </div>
-              </div>
-            ) : (
-              <div className="dashReminders dashRemindersDone">
-                <div className="dashRemindersDoneIcon">🎉</div>
-                <div className="dashRemindersDoneText">All caught up!</div>
-              </div>
-            )}
-          </div>
-
-          {/* Card Grid */}
-          <div className="dashGrid">
-            <button className="dashCard" onClick={() => onNavigate("habits")} type="button">
-              <div className="dashCardHeader">
-                <div className="dashCardTitle">Habits</div>
-                <div className="dashCardBadge">{habitsPct}%</div>
-              </div>
-              <div className="progressBar" style={{ height: 6 }}>
-                <div className="progressFill" style={{ width: `${habitsPct}%` }} />
-              </div>
-              <div className="dashCardMeta">{habitsDone}/{habitsTotal} completed</div>
+          {/* Quick Stats Row — compact health data */}
+          <div className="dashQuickStats">
+            <button className="dashQStat" onClick={() => onNavigate("sleep")} type="button">
+              <span className="dashQStatLabel">Sleep</span>
+              <span className="dashQStatVal">{sleepHours !== null ? `${sleepHours.toFixed(1)}h` : "\u2014"}</span>
             </button>
-
-            <button className="dashCard" onClick={() => onNavigate("workouts")} type="button">
-              <div className="dashCardHeader">
-                <div className="dashCardTitle">Workout</div>
-                {workoutLog?.completed && <div className="dashCardBadge dashBadgeGreen">Done</div>}
-              </div>
-              <div className="dashCardBig">{workout ? workout.title : "Rest Day"}</div>
-              {workout && <div className="dashCardMeta">{workout.exercises.length} exercises</div>}
+            <button className="dashQStat" onClick={() => onNavigate("water")} type="button">
+              <span className="dashQStatLabel">Water</span>
+              <span className="dashQStatVal">{waterGlasses}/{waterGoal}</span>
             </button>
-
-            <button className="dashCard" onClick={() => onNavigate("water")} type="button">
-              <div className="dashCardHeader">
-                <div className="dashCardTitle">Water</div>
-                <div className="dashCardBadge">{waterPct}%</div>
-              </div>
-              <div className="dashCardBig">{waterGlasses}/{waterGoal}</div>
-              <div className="dashCardMeta">glasses</div>
+            <button className="dashQStat" onClick={() => onNavigate("habits")} type="button">
+              <span className="dashQStatLabel">Habits</span>
+              <span className="dashQStatVal">{habitsPct}%</span>
             </button>
-
-            <button className="dashCard" onClick={() => onNavigate("sleep")} type="button">
-              <div className="dashCardHeader">
-                <div className="dashCardTitle">Sleep</div>
-                {sleepQuality > 0 && <div className={`dashCardBadge ${sleepQuality >= 4 ? "dashBadgeGreen" : ""}`}>{qualityLabels[sleepQuality]}</div>}
-              </div>
-              <div className="dashCardBig">{sleepHours !== null ? `${sleepHours.toFixed(1)}h` : "—"}</div>
-            </button>
-
-            <button className="dashCard" onClick={() => onNavigate("meditation")} type="button">
-              <div className="dashCardHeader">
-                <div className="dashCardTitle">Meditation</div>
-              </div>
-              <div className="dashCardBig">{medMinutes > 0 ? `${medMinutes} min` : "—"}</div>
-            </button>
-
             {todaySteps && (
-              <div className="dashCard">
-                <div className="dashCardHeader">
-                  <div className="dashCardTitle">Steps</div>
-                </div>
-                <div className="dashCardBig">{todaySteps.count.toLocaleString()}</div>
-                <div className="dashCardMeta">steps today</div>
+              <div className="dashQStat">
+                <span className="dashQStatLabel">Steps</span>
+                <span className="dashQStatVal">{todaySteps.count.toLocaleString()}</span>
               </div>
             )}
-
-            {todayActiveCal && (
-              <div className="dashCard">
-                <div className="dashCardHeader">
-                  <div className="dashCardTitle">Active Cal</div>
-                </div>
-                <div className="dashCardBig">{todayActiveCal.total}</div>
-                <div className="dashCardMeta">calories burned</div>
-              </div>
-            )}
-
             {todayHeartRate && (
-              <div className="dashCard">
-                <div className="dashCardHeader">
-                  <div className="dashCardTitle">Heart Rate</div>
-                </div>
-                <div className="dashCardBig">{todayHeartRate.avg} bpm</div>
-                <div className="dashCardMeta">{todayHeartRate.min}–{todayHeartRate.max} range</div>
+              <div className="dashQStat">
+                <span className="dashQStatLabel">HR</span>
+                <span className="dashQStatVal">{todayHeartRate.avg} bpm</span>
               </div>
             )}
-
-            <button className="dashCard" onClick={() => onNavigate("goals")} type="button">
-              <div className="dashCardHeader">
-                <div className="dashCardTitle">Goals</div>
-                <div className="dashCardBadge">{goals.length}</div>
-              </div>
-              {goals.length > 0 ? (
-                <div className="dashGoalsList">
-                  {goals.map(g => {
-                    const ms = g.milestones || [];
-                    const done = ms.filter(m => m.done).length;
-                    const pct = ms.length ? Math.round((done / ms.length) * 100) : 0;
-                    return (
-                      <div key={g.id} className="dashGoalItem">
-                        <div className="dashGoalName">{g.title}</div>
-                        {ms.length > 0 && (
-                          <div className="dashGoalProgress">
-                            <div className="progressBar" style={{ height: 4, flex: 1 }}>
-                              <div className="progressFill" style={{ width: `${pct}%` }} />
-                            </div>
-                            <span className="dashGoalPct">{done}/{ms.length}</span>
-                          </div>
-                        )}
-                      </div>
-                    );
-                  })}
-                </div>
-              ) : <div className="dashCardMeta">No goals yet</div>}
-            </button>
           </div>
 
-          {/* Focus + Supplements row */}
-          <div className="dashBottomRow">
-            {/* Focus Timer (compact) */}
-            <div className="dashFocusCompact">
-              <div className="dashFocusModes">
-                {Object.entries(FOCUS_MODES).map(([key, { label }]) => (
-                  <button key={key} className={`dashFocusModeBtn ${focusMode === key ? "dashFocusModeBtnActive" : ""}`}
-                    onClick={() => focusModeChange(key)} type="button">{label}</button>
-                ))}
-              </div>
-              <div className="dashFocusMain">
-                <div className={`dashFocusCircle ${focusIsBreak ? "dashFocusBreak" : ""} ${focusRunning ? "dashFocusRunning" : ""}`}>
-                  <svg viewBox="0 0 90 90" width="90" height="90" style={{ position: "absolute", top: 0, left: 0 }}>
-                    <circle cx="45" cy="45" r="40" fill="none" stroke="var(--line2)" strokeWidth="4" />
-                    <circle cx="45" cy="45" r="40" fill="none"
-                      stroke={focusIsBreak ? "#4caf50" : "var(--accent)"} strokeWidth="4" strokeLinecap="round"
-                      strokeDasharray={focusCircumference} strokeDashoffset={focusDashOffset}
-                      transform="rotate(-90 45 45)" />
-                  </svg>
-                  <div className="dashFocusTime">{formatFocusTime(focusTimeLeft)}</div>
-                </div>
-                <div className="dashFocusStats">
-                  <span className="dashFocusStatNum">{focusSessions.length}</span> sessions
-                  <span className="dashFocusStatSep">·</span>
-                  <span className="dashFocusStatNum">{focusTotalMin}</span> min
-                </div>
-              </div>
-              <div className="dashFocusControls">
-                {!focusRunning ? (
-                  <button className="btn btnPrimary" onClick={focusStart} type="button">
-                    {focusTimeLeft < focusDuration && focusTimeLeft > 0 ? "Resume" : "Start"}
-                  </button>
-                ) : (
-                  <button className="btn" onClick={focusPause} type="button">Pause</button>
-                )}
-                <button className="btn" onClick={focusReset} type="button">Reset</button>
-              </div>
-              <input type="text" className="dashFocusTaskInput" placeholder="Working on..." value={focusTask}
-                onChange={e => setFocusTask(e.target.value)} />
+          {/* Focus Timer */}
+          <div className="dashFocusCompact">
+            <div className="dashFocusModes">
+              {Object.entries(FOCUS_MODES).map(([key, { label }]) => (
+                <button key={key} className={`dashFocusModeBtn ${focusMode === key ? "dashFocusModeBtnActive" : ""}`}
+                  onClick={() => focusModeChange(key)} type="button">{label}</button>
+              ))}
             </div>
-
-            {/* Supplements (compact) */}
-            {suppTotal > 0 && (
-              <div className="dashSuppCompact">
-                <div className="dashSuppHeader">
-                  <div className="dashSuppTitle">Supplements</div>
-                  <div className="dashSuppProgress">{suppDone}/{suppTotal}</div>
-                </div>
-                <div className="progressBar" style={{ height: 5, marginBottom: 10 }}>
-                  <div className="progressFill" style={{ width: `${suppPct}%` }} />
-                </div>
-                <div className="dashSuppList">
-                  {supplements.map(s => {
-                    const taken = !!suppLog[s.id];
-                    return (
-                      <div key={s.id} className={`dashSuppRow ${taken ? "dashSuppRowDone" : ""}`}>
-                        <div className={`dashSuppCheck ${taken ? "dashSuppCheckDone" : ""}`}>
-                          {taken && "✓"}
-                        </div>
-                        <span className="dashSuppName">{s.name}</span>
-                        {s.dosage && <span className="dashSuppDose">{s.dosage}</span>}
-                      </div>
-                    );
-                  })}
-                </div>
-                <button className="dashSuppOpenBtn" onClick={() => onNavigate("supplements")} type="button">
-                  Open Supplements ›
-                </button>
+            <div className="dashFocusMain">
+              <div className={`dashFocusCircle ${focusIsBreak ? "dashFocusBreak" : ""} ${focusRunning ? "dashFocusRunning" : ""}`}>
+                <svg viewBox="0 0 90 90" width="90" height="90" style={{ position: "absolute", top: 0, left: 0 }}>
+                  <circle cx="45" cy="45" r="40" fill="none" stroke="var(--line2)" strokeWidth="4" />
+                  <circle cx="45" cy="45" r="40" fill="none"
+                    stroke={focusIsBreak ? "#4caf50" : "var(--accent)"} strokeWidth="4" strokeLinecap="round"
+                    strokeDasharray={focusCircumference} strokeDashoffset={focusDashOffset}
+                    transform="rotate(-90 45 45)" />
+                </svg>
+                <div className="dashFocusTime">{formatFocusTime(focusTimeLeft)}</div>
               </div>
-            )}
+              <div className="dashFocusStats">
+                <span className="dashFocusStatNum">{focusSessions.length}</span> sessions
+                <span className="dashFocusStatSep">{"\u00B7"}</span>
+                <span className="dashFocusStatNum">{focusTotalMin}</span> min
+              </div>
+            </div>
+            <div className="dashFocusControls">
+              {!focusRunning ? (
+                <button className="btn btnPrimary" onClick={focusStart} type="button">
+                  {focusTimeLeft < focusDuration && focusTimeLeft > 0 ? "Resume" : "Start"}
+                </button>
+              ) : (
+                <button className="btn" onClick={focusPause} type="button">Pause</button>
+              )}
+              <button className="btn" onClick={focusReset} type="button">Reset</button>
+            </div>
+            <input type="text" className="dashFocusTaskInput" placeholder="Working on..." value={focusTask}
+              onChange={e => setFocusTask(e.target.value)} />
           </div>
 
-          {/* Quote */}
-          <div className="dashQuote">
-            <div className="dashQuoteText">"{quote.text}"</div>
-            <div className="dashQuoteAuthor">-- {quote.author}</div>
-          </div>
+          {/* Supplements (compact) */}
+          {suppTotal > 0 && (
+            <div className="dashSuppCompact">
+              <div className="dashSuppHeader">
+                <div className="dashSuppTitle">Supplements</div>
+                <div className="dashSuppProgress">{suppDone}/{suppTotal}</div>
+              </div>
+              <div className="progressBar" style={{ height: 5, marginBottom: 10 }}>
+                <div className="progressFill" style={{ width: `${suppPct}%` }} />
+              </div>
+              <div className="dashSuppList">
+                {supplements.map(s => {
+                  const taken = !!suppLog[s.id];
+                  return (
+                    <div key={s.id} className={`dashSuppRow ${taken ? "dashSuppRowDone" : ""}`}>
+                      <div className={`dashSuppCheck ${taken ? "dashSuppCheckDone" : ""}`}>
+                        {taken && "\u2713"}
+                      </div>
+                      <span className="dashSuppName">{s.name}</span>
+                      {s.dosage && <span className="dashSuppDose">{s.dosage}</span>}
+                    </div>
+                  );
+                })}
+              </div>
+              <button className="dashSuppOpenBtn" onClick={() => onNavigate("supplements")} type="button">
+                Open Supplements {"\u203A"}
+              </button>
+            </div>
+          )}
+
         </div>
 
         {/* ── RIGHT COLUMN: Today's Planner ── */}
@@ -757,6 +673,15 @@ export default function DashboardPage({ onNavigate, spiritualPath: spPath }) {
           <div className="dashPlannerBody">
             {plannerTab === "planner" ? (
               <>
+                <div className="dpSection dpWakeRow">
+                  <div className="dpLabel">Wake up time</div>
+                  <input
+                    type="time"
+                    className="input dpWakeInput"
+                    value={day.wakeTime || ""}
+                    onChange={v => updateDay(cur => ({ ...cur, wakeTime: v.target.value }))}
+                  />
+                </div>
                 <div className="dpSection">
                   <div className="dpLabel">Grateful for</div>
                   <AutoGrowTextarea value={day.grateful} onChange={v => updateDay(cur => ({ ...cur, grateful: v }))}
@@ -1000,8 +925,21 @@ export default function DashboardPage({ onNavigate, spiritualPath: spPath }) {
               </>
             ) : null}
           </div>
+
+          {/* Quotes — bottom of planner */}
+          {spiritualContent && (
+            <div className="dashBible" style={{ marginTop: 16 }}>
+              <div className="dashBibleVerse">"{spiritualContent.verse || spiritualContent.text}"</div>
+              <div className="dashBibleRef">-- {spiritualContent.reference || spiritualContent.author}</div>
+            </div>
+          )}
+          <div className="dashQuote" style={{ marginTop: spiritualContent ? 10 : 16 }}>
+            <div className="dashQuoteText">"{quote.text}"</div>
+            <div className="dashQuoteAuthor">-- {quote.author}</div>
+          </div>
         </div>
       </div>
+
     </div>
   );
 }

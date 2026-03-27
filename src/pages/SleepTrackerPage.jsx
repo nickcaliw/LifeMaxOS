@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ymd, startOfWeekMonday, addDays } from "../lib/dates.js";
 
 const sleepApi = typeof window !== "undefined" ? window.sleepApi : null;
+const plannerApi = typeof window !== "undefined" ? window.plannerApi : null;
 const SLEEP_GOAL = 8; // hours
 
 function calcDuration(bedtime, waketime) {
@@ -83,6 +84,97 @@ export default function SleepTrackerPage() {
       setRangeData(data || []);
     });
   }, [today, todayStr, monthDate, weekOffset, bedtime, waketime, quality]);
+
+  // Load wake times from planner entries + sleep logs (last 30 days)
+  const [wakeTimes, setWakeTimes] = useState({});
+  useEffect(() => {
+    async function load() {
+      const start = ymd(addDays(today, -30));
+      const wt = {};
+
+      // Pull from sleep logs first (wake time from sleep tracker / Apple Health)
+      if (sleepApi) {
+        try {
+          const sleepData = await sleepApi.range(start, todayStr);
+          for (const entry of (sleepData || [])) {
+            if (entry.waketime && entry.date) wt[entry.date] = entry.waketime;
+          }
+        } catch {}
+      }
+
+      // Overlay planner wake times (user-entered, takes priority)
+      if (plannerApi) {
+        try {
+          const plannerData = await plannerApi.getRange(start, todayStr);
+          for (const [date, entry] of Object.entries(plannerData || {})) {
+            if (entry.wakeTime) wt[date] = entry.wakeTime;
+          }
+        } catch {}
+      }
+
+      setWakeTimes(wt);
+    }
+    load();
+  }, [today, todayStr]);
+
+  // Wake time stats
+  const wakeTimeStats = useMemo(() => {
+    const entries = Object.entries(wakeTimes).sort((a, b) => a[0].localeCompare(b[0]));
+    if (entries.length === 0) return null;
+
+    // Parse time strings to minutes since midnight
+    const toMinutes = (t) => {
+      const [h, m] = t.split(":").map(Number);
+      return h * 60 + m;
+    };
+    const fromMinutes = (m) => {
+      const h = Math.floor(m / 60);
+      const min = Math.round(m % 60);
+      return `${h}:${String(min).padStart(2, "0")}`;
+    };
+    const formatTime12 = (t) => {
+      const [h, m] = t.split(":").map(Number);
+      const ampm = h >= 12 ? "PM" : "AM";
+      const h12 = h === 0 ? 12 : h > 12 ? h - 12 : h;
+      return `${h12}:${String(m).padStart(2, "0")} ${ampm}`;
+    };
+
+    const minutes = entries.map(([, t]) => toMinutes(t));
+    const avg = minutes.reduce((a, b) => a + b, 0) / minutes.length;
+    const earliest = Math.min(...minutes);
+    const latest = Math.max(...minutes);
+
+    // Last 7 vs previous 7 trend
+    const last7 = entries.slice(-7).map(([, t]) => toMinutes(t));
+    const prev7 = entries.slice(-14, -7).map(([, t]) => toMinutes(t));
+    let trend = null;
+    if (last7.length >= 3 && prev7.length >= 3) {
+      const avgLast = last7.reduce((a, b) => a + b, 0) / last7.length;
+      const avgPrev = prev7.reduce((a, b) => a + b, 0) / prev7.length;
+      const diff = avgLast - avgPrev;
+      if (diff > 15) trend = "later";
+      else if (diff < -15) trend = "earlier";
+      else trend = "consistent";
+    }
+
+    // Week average (last 7 days only)
+    const weekStart = ymd(addDays(today, -6));
+    const weekEntries = entries.filter(([date]) => date >= weekStart);
+    const weekMinutes = weekEntries.map(([, t]) => toMinutes(t));
+    const weekAvgVal = weekMinutes.length > 0
+      ? formatTime12(fromMinutes(weekMinutes.reduce((a, b) => a + b, 0) / weekMinutes.length))
+      : null;
+
+    return {
+      avg: formatTime12(fromMinutes(avg)),
+      weekAvg: weekAvgVal,
+      earliest: formatTime12(fromMinutes(earliest)),
+      latest: formatTime12(fromMinutes(latest)),
+      trend,
+      entries: entries.map(([date, time]) => ({ date, time, minutes: toMinutes(time) })),
+      count: entries.length,
+    };
+  }, [wakeTimes]);
 
   const doSave = useCallback((b, w, q, n) => {
     if (!sleepApi) return;
@@ -267,14 +359,62 @@ export default function SleepTrackerPage() {
           {/* Averages */}
           <div className="sleepAvg">
             <div className="sleepAvgCard">
-              <div className="sleepAvgValue">{weekAvg.count > 0 ? formatDuration(weekAvg.avgHours) : "—"}</div>
+              <div className="sleepAvgValue">{weekAvg.count > 0 ? formatDuration(weekAvg.avgHours) : "\u2014"}</div>
               <div className="sleepAvgLabel">Week Avg Sleep</div>
             </div>
             <div className="sleepAvgCard">
-              <div className="sleepAvgValue">{weekAvg.count > 0 ? `${weekAvg.avgQuality.toFixed(1)} / 5` : "—"}</div>
+              <div className="sleepAvgValue">{weekAvg.count > 0 ? `${weekAvg.avgQuality.toFixed(1)} / 5` : "\u2014"}</div>
               <div className="sleepAvgLabel">Week Avg Quality</div>
             </div>
+            {wakeTimeStats && (
+              <div className="sleepAvgCard">
+                <div className="sleepAvgValue">{wakeTimeStats.weekAvg || wakeTimeStats.avg}</div>
+                <div className="sleepAvgLabel">Week Avg Wake</div>
+              </div>
+            )}
           </div>
+
+          {/* Wake Time Trend */}
+          {wakeTimeStats && wakeTimeStats.entries.length > 3 && (
+            <div className="sleepWakeTrend">
+              <div className="sleepWakeTrendHeader">
+                <div className="sleepWakeTrendTitle">Wake Time Trend</div>
+                <div className="sleepWakeTrendMeta">
+                  {wakeTimeStats.trend === "earlier" ? "\u2191 Getting up earlier" :
+                   wakeTimeStats.trend === "later" ? "\u2193 Getting up later" :
+                   wakeTimeStats.trend === "consistent" ? "\u2192 Consistent" : ""}
+                </div>
+              </div>
+              <div className="sleepWakeStats">
+                <span>Earliest: <strong>{wakeTimeStats.earliest}</strong></span>
+                <span>Latest: <strong>{wakeTimeStats.latest}</strong></span>
+                <span>{wakeTimeStats.count} days logged</span>
+              </div>
+              <div className="sleepWakeChart">
+                {wakeTimeStats.entries.slice(-14).map((e, i) => {
+                  const minTime = 300;  // 5:00 AM in minutes
+                  const maxTime = 600;  // 10:00 AM in minutes
+                  const clamped = Math.max(minTime, Math.min(maxTime, e.minutes));
+                  const pct = ((clamped - minTime) / (maxTime - minTime)) * 100;
+                  const [y, m, d] = e.date.split("-").map(Number);
+                  const dow = new Date(y, m - 1, d).toLocaleDateString(undefined, { weekday: "narrow" });
+                  return (
+                    <div key={e.date} className="sleepWakeBar" title={`${e.date}: ${e.time}`}>
+                      <div className="sleepWakeBarTrack">
+                        <div className="sleepWakeBarDot" style={{ bottom: `${100 - pct}%` }} />
+                      </div>
+                      <div className="sleepWakeBarLabel">{dow}</div>
+                    </div>
+                  );
+                })}
+              </div>
+              <div className="sleepWakeChartAxis">
+                <span>5 AM</span>
+                <span>7 AM</span>
+                <span>9 AM</span>
+              </div>
+            </div>
+          )}
 
           {/* Chart Toggle */}
           <div className="waterChartToggle">

@@ -127,6 +127,19 @@ export default function App() {
     window.settingsApi.set("weightUnit", next);
   };
 
+  // Responsive zoom based on window size
+  useEffect(() => {
+    const updateZoom = () => {
+      const w = window.outerWidth;
+      if (w < 1300) document.documentElement.style.zoom = "0.7";
+      else if (w < 1600) document.documentElement.style.zoom = "0.8";
+      else document.documentElement.style.zoom = "0.85";
+    };
+    updateZoom();
+    window.addEventListener("resize", updateZoom);
+    return () => window.removeEventListener("resize", updateZoom);
+  }, []);
+
   // Keyboard shortcuts
   const PAGE_SHORTCUTS = useMemo(() => ({
     "1": "dashboard", "2": "planner", "3": "calendar", "4": "habits",
@@ -167,6 +180,35 @@ export default function App() {
   }, [PAGE_SHORTCUTS]);
 
   const { weekData, allData, loading, saveDay } = useWeekData(weekStart);
+
+  // Load Apple Health data for visible dates
+  const [healthData, setHealthData] = useState({}); // dateStr → { steps, heartRate, activeCal }
+  useEffect(() => {
+    if (!settingsApiApp) return;
+    async function loadHealth() {
+      const dates = plannerView === "3day"
+        ? [addDays(new Date(), -1), new Date(), addDays(new Date(), 1)]
+        : Array.from({ length: 7 }, (_, i) => addDays(weekStart, i));
+      const result = {};
+      for (const d of dates) {
+        const ds = ymd(d);
+        const [stepsRaw, hrRaw, acRaw] = await Promise.all([
+          settingsApiApp.get(`steps_${ds}`),
+          settingsApiApp.get(`heartrate_${ds}`),
+          settingsApiApp.get(`activecal_${ds}`),
+        ]);
+        if (stepsRaw || hrRaw || acRaw) {
+          result[ds] = {
+            steps: stepsRaw ? JSON.parse(stepsRaw) : null,
+            heartRate: hrRaw ? JSON.parse(hrRaw) : null,
+            activeCal: acRaw ? JSON.parse(acRaw) : null,
+          };
+        }
+      }
+      setHealthData(result);
+    }
+    loadHealth();
+  }, [weekStart, plannerView]);
 
   const weekDates = useMemo(
     () => Array.from({ length: 7 }, (_, i) => addDays(weekStart, i)),
@@ -340,22 +382,25 @@ export default function App() {
                               className={`tabBtn ${day.tab === "planner" ? "active" : ""}`}
                               onClick={() => updateDay(dateStr, (cur) => ({ ...cur, tab: "planner" }))}
                               type="button"
+                              title="Planner"
                             >
-                              Planner
+                              {plannerView === "week" ? <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg> : "Planner"}
                             </button>
                             <button
                               className={`tabBtn ${day.tab === "habits" ? "active" : ""}`}
                               onClick={() => updateDay(dateStr, (cur) => ({ ...cur, tab: "habits" }))}
                               type="button"
+                              title="Habits"
                             >
-                              Habits
+                              {plannerView === "week" ? <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg> : "Habits"}
                             </button>
                             <button
                               className={`tabBtn ${day.tab === "journal" ? "active" : ""}`}
                               onClick={() => updateDay(dateStr, (cur) => ({ ...cur, tab: "journal" }))}
                               type="button"
+                              title="Journal"
                             >
-                              Journal
+                              {plannerView === "week" ? <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/></svg> : "Journal"}
                             </button>
                           </div>
                         </div>
@@ -532,6 +577,32 @@ export default function App() {
                               </div>
                             </div>
 
+                            {healthData[dateStr] && (
+                              <div className="section">
+                                <div className="label">Health</div>
+                                <div className="healthGrid">
+                                  {healthData[dateStr].steps && (
+                                    <div className="healthStat">
+                                      <div className="healthStatValue">{healthData[dateStr].steps.count.toLocaleString()}</div>
+                                      <div className="healthStatLabel">steps</div>
+                                    </div>
+                                  )}
+                                  {healthData[dateStr].activeCal && (
+                                    <div className="healthStat">
+                                      <div className="healthStatValue">{healthData[dateStr].activeCal.total.toLocaleString()}</div>
+                                      <div className="healthStatLabel">active cal</div>
+                                    </div>
+                                  )}
+                                  {healthData[dateStr].heartRate && (
+                                    <div className="healthStat">
+                                      <div className="healthStatValue">{healthData[dateStr].heartRate.avg} <span className="healthStatUnit">bpm</span></div>
+                                      <div className="healthStatLabel">{healthData[dateStr].heartRate.min}–{healthData[dateStr].heartRate.max}</div>
+                                    </div>
+                                  )}
+                                </div>
+                              </div>
+                            )}
+
                             <div className="section">
                               <div className="weightHeader">
                                 <div className="label" style={{ marginBottom: 0 }}>Weight</div>
@@ -684,6 +755,31 @@ export default function App() {
                           </div>
                         ) : day.tab === "journal" ? (
                           <div className="dayBody">
+                            {healthData[dateStr] && (
+                              <div className="section">
+                                <div className="label">Health</div>
+                                <div className="healthGrid">
+                                  {healthData[dateStr].steps && (
+                                    <div className="healthStat">
+                                      <div className="healthStatValue">{healthData[dateStr].steps.count.toLocaleString()}</div>
+                                      <div className="healthStatLabel">steps</div>
+                                    </div>
+                                  )}
+                                  {healthData[dateStr].activeCal && (
+                                    <div className="healthStat">
+                                      <div className="healthStatValue">{healthData[dateStr].activeCal.total.toLocaleString()}</div>
+                                      <div className="healthStatLabel">active cal</div>
+                                    </div>
+                                  )}
+                                  {healthData[dateStr].heartRate && (
+                                    <div className="healthStat">
+                                      <div className="healthStatValue">{healthData[dateStr].heartRate.avg} <span className="healthStatUnit">bpm</span></div>
+                                      <div className="healthStatLabel">{healthData[dateStr].heartRate.min}–{healthData[dateStr].heartRate.max}</div>
+                                    </div>
+                                  )}
+                                </div>
+                              </div>
+                            )}
                             <div className="section">
                               <div className="label">How are you feeling?</div>
                               <div className="jnlMoodPicker">
@@ -832,7 +928,7 @@ export default function App() {
         ) : activePage === "routines" ? (
           <RoutinesPage />
         ) : activePage === "mood" ? (
-          <MoodTrackerPage onNavigate={setActivePage} />
+          <MoodTrackerPage />
         ) : activePage === "fasting" ? (
           <FastingTrackerPage />
         ) : activePage === "budget" ? (

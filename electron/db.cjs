@@ -233,6 +233,90 @@ function initDb() {
   `);
   db.exec(`CREATE INDEX IF NOT EXISTS idx_collections_type ON collections(collection);`);
 
+  // Tracking Imports
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS tracking_imports (
+      id TEXT PRIMARY KEY,
+      source TEXT NOT NULL,
+      domain TEXT NOT NULL,
+      date TEXT NOT NULL,
+      data_json TEXT NOT NULL,
+      status TEXT DEFAULT 'auto',
+      merged_to TEXT,
+      source_id TEXT,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+  `);
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_ti_source_date ON tracking_imports(source, date);`);
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_ti_domain ON tracking_imports(domain);`);
+
+  // Sync State
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS sync_state (
+      source TEXT PRIMARY KEY,
+      last_sync_at TEXT,
+      last_sync_date TEXT,
+      status TEXT DEFAULT 'idle',
+      error_message TEXT,
+      config_json TEXT
+    );
+  `);
+
+  // Daily Plans (Life Orchestrator)
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS daily_plans (
+      date TEXT PRIMARY KEY,
+      data_json TEXT NOT NULL,
+      readiness_score INTEGER,
+      day_type TEXT,
+      score INTEGER,
+      score_breakdown_json TEXT,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+  `);
+
+  // Weekly Plans (Life Orchestrator)
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS weekly_plans (
+      week_start TEXT PRIMARY KEY,
+      data_json TEXT NOT NULL,
+      last_week_score INTEGER,
+      target_score INTEGER,
+      insights_json TEXT,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+  `);
+
+  // Workout Plans
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS workout_plans (
+      id TEXT PRIMARY KEY,
+      data_json TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'active',
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+  `);
+
+  // Workout Schedule (individual scheduled sessions)
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS workout_schedule (
+      id TEXT PRIMARY KEY,
+      plan_id TEXT NOT NULL,
+      date TEXT NOT NULL,
+      data_json TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'scheduled',
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+  `);
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_ws_date ON workout_schedule(date);`);
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_ws_plan ON workout_schedule(plan_id);`);
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_ws_status ON workout_schedule(plan_id, status);`);
+
   // App settings (theme, notifications, etc.)
   db.exec(`
     CREATE TABLE IF NOT EXISTS app_settings (
@@ -863,6 +947,155 @@ function searchKnowledge(query) {
     .map(r => ({ id: r.id, category: r.category, pinned: !!r.pinned, created_at: r.created_at, updated_at: r.updated_at, ...JSON.parse(r.data_json) }));
 }
 
+// --- Workout Plans ---
+function getWorkoutPlan(id) {
+  const d = initDb();
+  const row = d.prepare("SELECT id, data_json, status, created_at, updated_at FROM workout_plans WHERE id = ?").get(id);
+  if (!row) return null;
+  return { id: row.id, status: row.status, created_at: row.created_at, updated_at: row.updated_at, ...JSON.parse(row.data_json) };
+}
+function getActiveWorkoutPlan() {
+  const d = initDb();
+  const row = d.prepare("SELECT id, data_json, status, created_at, updated_at FROM workout_plans WHERE status = 'active' ORDER BY created_at DESC LIMIT 1").get();
+  if (!row) return null;
+  return { id: row.id, status: row.status, created_at: row.created_at, updated_at: row.updated_at, ...JSON.parse(row.data_json) };
+}
+function upsertWorkoutPlan(id, data, status) {
+  const d = initDb();
+  const now = new Date().toISOString();
+  d.prepare(`INSERT INTO workout_plans (id, data_json, status, created_at, updated_at) VALUES (?,?,?,?,?)
+    ON CONFLICT(id) DO UPDATE SET data_json=excluded.data_json, status=excluded.status, updated_at=excluded.updated_at
+  `).run(id, JSON.stringify(data), status || 'active', now, now);
+  return { ok: true };
+}
+function deactivateAllWorkoutPlans() {
+  const d = initDb();
+  d.prepare("UPDATE workout_plans SET status = 'archived', updated_at = ? WHERE status = 'active'").run(new Date().toISOString());
+  return { ok: true };
+}
+
+// --- Workout Schedule ---
+function getScheduleForDate(date) {
+  const d = initDb();
+  const row = d.prepare("SELECT id, plan_id, date, data_json, status, created_at, updated_at FROM workout_schedule WHERE date = ? ORDER BY created_at DESC LIMIT 1").get(date);
+  if (!row) return null;
+  return { id: row.id, plan_id: row.plan_id, date: row.date, status: row.status, ...JSON.parse(row.data_json) };
+}
+function getScheduleRange(start, end) {
+  const d = initDb();
+  return d.prepare("SELECT id, plan_id, date, data_json, status FROM workout_schedule WHERE date >= ? AND date <= ? ORDER BY date ASC").all(start, end)
+    .map(r => ({ id: r.id, plan_id: r.plan_id, date: r.date, status: r.status, ...JSON.parse(r.data_json) }));
+}
+function upsertScheduleEntry(id, planId, date, data, status) {
+  const d = initDb();
+  const now = new Date().toISOString();
+  d.prepare(`INSERT INTO workout_schedule (id, plan_id, date, data_json, status, created_at, updated_at) VALUES (?,?,?,?,?,?,?)
+    ON CONFLICT(id) DO UPDATE SET data_json=excluded.data_json, status=excluded.status, date=excluded.date, updated_at=excluded.updated_at
+  `).run(id, planId, date, JSON.stringify(data), status || 'scheduled', now, now);
+  return { ok: true };
+}
+function deleteScheduleForPlan(planId) {
+  const d = initDb();
+  d.prepare("DELETE FROM workout_schedule WHERE plan_id = ? AND status = 'scheduled'").run(planId);
+  return { ok: true };
+}
+function clearFutureSchedule(planId, fromDate) {
+  const d = initDb();
+  d.prepare("DELETE FROM workout_schedule WHERE plan_id = ? AND date >= ? AND status = 'scheduled'").run(planId, fromDate);
+  return { ok: true };
+}
+function bulkInsertSchedule(entries) {
+  const d = initDb();
+  const now = new Date().toISOString();
+  const stmt = d.prepare(`INSERT OR REPLACE INTO workout_schedule (id, plan_id, date, data_json, status, created_at, updated_at) VALUES (?,?,?,?,?,?,?)`);
+  const tx = d.transaction((rows) => {
+    for (const r of rows) {
+      stmt.run(r.id, r.plan_id, r.date, JSON.stringify(r.data), r.status || 'scheduled', now, now);
+    }
+  });
+  tx(entries);
+  return { ok: true };
+}
+
+// --- Sync State ---
+function getSyncState(source) {
+  const d = initDb();
+  const row = d.prepare("SELECT * FROM sync_state WHERE source = ?").get(source);
+  if (!row) return null;
+  return { ...row, config: row.config_json ? JSON.parse(row.config_json) : null };
+}
+function upsertSyncState(source, data) {
+  const d = initDb();
+  d.prepare(`INSERT INTO sync_state (source, last_sync_at, last_sync_date, status, error_message, config_json)
+    VALUES (?,?,?,?,?,?)
+    ON CONFLICT(source) DO UPDATE SET last_sync_at=excluded.last_sync_at, last_sync_date=excluded.last_sync_date, status=excluded.status, error_message=excluded.error_message, config_json=excluded.config_json
+  `).run(source, data.last_sync_at || new Date().toISOString(), data.last_sync_date || null, data.status || 'idle', data.error_message || null, data.config ? JSON.stringify(data.config) : null);
+  return { ok: true };
+}
+function getAllSyncStates() {
+  const d = initDb();
+  return d.prepare("SELECT * FROM sync_state ORDER BY source").all()
+    .map(r => ({ ...r, config: r.config_json ? JSON.parse(r.config_json) : null }));
+}
+
+// --- Tracking Imports ---
+function addTrackingImport(id, source, domain, date, data, status) {
+  const d = initDb();
+  const now = new Date().toISOString();
+  d.prepare(`INSERT OR REPLACE INTO tracking_imports (id, source, domain, date, data_json, status, created_at, updated_at)
+    VALUES (?,?,?,?,?,?,?,?)
+  `).run(id, source, domain, date, JSON.stringify(data), status || 'auto', now, now);
+  return { ok: true };
+}
+function getTrackingImports(source, domain, startDate, endDate) {
+  const d = initDb();
+  let sql = "SELECT * FROM tracking_imports WHERE 1=1";
+  const params = [];
+  if (source) { sql += " AND source = ?"; params.push(source); }
+  if (domain) { sql += " AND domain = ?"; params.push(domain); }
+  if (startDate) { sql += " AND date >= ?"; params.push(startDate); }
+  if (endDate) { sql += " AND date <= ?"; params.push(endDate); }
+  sql += " ORDER BY date DESC LIMIT 500";
+  return d.prepare(sql).all(...params).map(r => ({ ...r, data: JSON.parse(r.data_json) }));
+}
+
+// --- Daily Plans (Life Orchestrator) ---
+function getDailyPlan(date) {
+  const d = initDb();
+  const row = d.prepare("SELECT * FROM daily_plans WHERE date = ?").get(date);
+  if (!row) return null;
+  return { date: row.date, readiness_score: row.readiness_score, day_type: row.day_type, score: row.score, score_breakdown: row.score_breakdown_json ? JSON.parse(row.score_breakdown_json) : null, ...JSON.parse(row.data_json) };
+}
+function upsertDailyPlan(date, data, readiness, dayType, score, scoreBreakdown) {
+  const d = initDb();
+  const now = new Date().toISOString();
+  d.prepare(`INSERT INTO daily_plans (date, data_json, readiness_score, day_type, score, score_breakdown_json, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?)
+    ON CONFLICT(date) DO UPDATE SET data_json=excluded.data_json, readiness_score=excluded.readiness_score, day_type=excluded.day_type, score=excluded.score, score_breakdown_json=excluded.score_breakdown_json, updated_at=excluded.updated_at
+  `).run(date, JSON.stringify(data), readiness || 0, dayType || 'standard', score || 0, scoreBreakdown ? JSON.stringify(scoreBreakdown) : null, now, now);
+  return { ok: true };
+}
+function getDailyPlansRange(start, end) {
+  const d = initDb();
+  return d.prepare("SELECT date, data_json, readiness_score, day_type, score, score_breakdown_json FROM daily_plans WHERE date >= ? AND date <= ? ORDER BY date ASC").all(start, end)
+    .map(r => ({ date: r.date, readiness_score: r.readiness_score, day_type: r.day_type, score: r.score, score_breakdown: r.score_breakdown_json ? JSON.parse(r.score_breakdown_json) : null, ...JSON.parse(r.data_json) }));
+}
+
+// --- Weekly Plans (Life Orchestrator) ---
+function getWeeklyPlan(weekStart) {
+  const d = initDb();
+  const row = d.prepare("SELECT * FROM weekly_plans WHERE week_start = ?").get(weekStart);
+  if (!row) return null;
+  return { week_start: row.week_start, last_week_score: row.last_week_score, target_score: row.target_score, insights: row.insights_json ? JSON.parse(row.insights_json) : null, ...JSON.parse(row.data_json) };
+}
+function upsertWeeklyPlan(weekStart, data, lastWeekScore, targetScore, insights) {
+  const d = initDb();
+  const now = new Date().toISOString();
+  d.prepare(`INSERT INTO weekly_plans (week_start, data_json, last_week_score, target_score, insights_json, created_at, updated_at) VALUES (?,?,?,?,?,?,?)
+    ON CONFLICT(week_start) DO UPDATE SET data_json=excluded.data_json, last_week_score=excluded.last_week_score, target_score=excluded.target_score, insights_json=excluded.insights_json, updated_at=excluded.updated_at
+  `).run(weekStart, JSON.stringify(data), lastWeekScore || 0, targetScore || 0, insights ? JSON.stringify(insights) : null, now, now);
+  return { ok: true };
+}
+
 module.exports = {
   initDb, getEntry, upsertEntry, getRange, getAllEntries,
   getWorkoutLog, upsertWorkoutLog, getWorkoutLogsRange, getWorkoutLogDates,
@@ -891,4 +1124,10 @@ module.exports = {
   exportAllData, importAllData,
   getCollectionItems, upsertCollectionItem, deleteCollectionItem,
   globalSearch,
+  getWorkoutPlan, getActiveWorkoutPlan, upsertWorkoutPlan, deactivateAllWorkoutPlans,
+  getScheduleForDate, getScheduleRange, upsertScheduleEntry, deleteScheduleForPlan, clearFutureSchedule, bulkInsertSchedule,
+  getDailyPlan, upsertDailyPlan, getDailyPlansRange,
+  getWeeklyPlan, upsertWeeklyPlan,
+  getSyncState, upsertSyncState, getAllSyncStates,
+  addTrackingImport, getTrackingImports,
 };
