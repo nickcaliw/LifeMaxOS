@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { ymd } from "../lib/dates.js";
 
 const api = typeof window !== "undefined" ? window.bodyApi : null;
+const plannerApi = typeof window !== "undefined" ? window.plannerApi : null;
 
 const ACTIVITY_LEVELS = [
   { id: "sedentary", label: "Sedentary", desc: "Little or no exercise", factor: 1.2 },
@@ -190,10 +191,59 @@ export default function BodyStatsPage() {
 
   const load = useCallback(async () => {
     if (api) {
-      const e = await api.get(selectedDate);
-      setEntry(e || { weight: "", bodyFat: "", chest: "", waist: "", hips: "", arms: "", notes: "" });
-      const all = await api.all();
-      setAllStats(all || []);
+      let e = await api.get(selectedDate);
+      if (!e) e = { weight: "", bodyFat: "", chest: "", waist: "", hips: "", arms: "", notes: "" };
+
+      // Pull weight from planner if body stats doesn't have it
+      if (!e.weight && plannerApi) {
+        try {
+          const plannerEntry = await plannerApi.getDay(selectedDate);
+          if (plannerEntry?.weightAm) {
+            e = { ...e, weight: plannerEntry.weightAm, weightSource: "planner_am" };
+          } else if (plannerEntry?.weightPm) {
+            e = { ...e, weight: plannerEntry.weightPm, weightSource: "planner_pm" };
+          }
+        } catch {}
+      }
+
+      // Also store AM/PM separately if available from planner
+      if (plannerApi) {
+        try {
+          const plannerEntry = await plannerApi.getDay(selectedDate);
+          if (plannerEntry?.weightAm) e.weightAm = plannerEntry.weightAm;
+          if (plannerEntry?.weightPm) e.weightPm = plannerEntry.weightPm;
+        } catch {}
+      }
+
+      setEntry(e);
+
+      // Load all stats and merge planner weights for dates that have no body_stats weight
+      let all = await api.all() || [];
+
+      if (plannerApi) {
+        try {
+          const plannerData = await plannerApi.getAll();
+          if (plannerData) {
+            const bodyDates = new Set(all.filter(s => s.weight).map(s => s.date));
+            for (const [date, pEntry] of Object.entries(plannerData)) {
+              if (!bodyDates.has(date) && (pEntry.weightAm || pEntry.weightPm)) {
+                all.push({
+                  date,
+                  weight: pEntry.weightAm || pEntry.weightPm,
+                  weightAm: pEntry.weightAm || "",
+                  weightPm: pEntry.weightPm || "",
+                  bodyFat: "",
+                  source: "planner",
+                });
+              }
+            }
+          }
+        } catch {}
+      }
+
+      // Sort by date
+      all.sort((a, b) => (a.date || "").localeCompare(b.date || ""));
+      setAllStats(all);
     }
   }, [selectedDate]);
 

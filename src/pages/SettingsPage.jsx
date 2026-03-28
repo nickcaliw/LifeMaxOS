@@ -28,6 +28,19 @@ export default function SettingsPage({ spiritualPath, onSpiritualPathChange }) {
   const [importing, setImporting] = useState(false);
   const [mfpImporting, setMfpImporting] = useState(false);
 
+  // Profile state
+  const [profileName, setProfileName] = useState("");
+  const [wakeTime, setWakeTime] = useState("");
+  const [bedTime, setBedTime] = useState("");
+  const [workoutTimePref, setWorkoutTimePref] = useState("");
+  const nameTimerRef = useRef(null);
+
+  // AI state
+  const [aiProvider, setAiProvider] = useState("openai");
+  const [aiApiKey, setAiApiKey] = useState("");
+  const [aiStatus, setAiStatus] = useState(null); // null | "testing" | "success" | "error"
+  const aiKeyTimerRef = useRef(null);
+
   // Load settings on mount
   useEffect(() => {
     async function load() {
@@ -36,10 +49,22 @@ export default function SettingsPage({ spiritualPath, onSpiritualPathChange }) {
       const bedtime = await settingsApi.get("bedtimeReminder");
       const supplement = await settingsApi.get("supplementReminder");
       const backup = await settingsApi.get("lastBackupDate");
+      const name = await settingsApi.get("user_name");
+      const wake = await settingsApi.get("wake_time");
+      const bed = await settingsApi.get("bed_time");
+      const workout = await settingsApi.get("workout_time");
       if (water !== undefined) setWaterReminder(!!water);
       if (bedtime !== undefined) setBedtimeReminder(!!bedtime);
       if (supplement !== undefined) setSupplementReminder(!!supplement);
       if (backup) setLastBackup(backup);
+      if (name) setProfileName(name);
+      if (wake) setWakeTime(wake);
+      if (bed) setBedTime(bed);
+      if (workout) setWorkoutTimePref(workout);
+      const aip = await settingsApi.get("ai_provider");
+      const aik = await settingsApi.get("ai_api_key");
+      if (aip) setAiProvider(aip);
+      if (aik) setAiApiKey(aik);
     }
     load();
   }, []);
@@ -48,6 +73,30 @@ export default function SettingsPage({ spiritualPath, onSpiritualPathChange }) {
     setMessage({ type, text });
     setTimeout(() => setMessage(null), 4000);
   }, []);
+
+  // --- Profile handlers ---
+  const handleProfileNameChange = (val) => {
+    setProfileName(val);
+    if (nameTimerRef.current) clearTimeout(nameTimerRef.current);
+    nameTimerRef.current = setTimeout(() => {
+      if (settingsApi) settingsApi.set("user_name", val);
+    }, 500);
+  };
+
+  const handleWakeTimeChange = (val) => {
+    setWakeTime(val);
+    if (settingsApi) settingsApi.set("wake_time", val);
+  };
+
+  const handleBedTimeChange = (val) => {
+    setBedTime(val);
+    if (settingsApi) settingsApi.set("bed_time", val);
+  };
+
+  const handleWorkoutTimePrefChange = (val) => {
+    setWorkoutTimePref(val);
+    if (settingsApi) settingsApi.set("workout_time", val);
+  };
 
   // --- Data Management ---
 
@@ -243,6 +292,109 @@ export default function SettingsPage({ spiritualPath, onSpiritualPathChange }) {
           </div>
         )}
 
+        {/* Your Profile */}
+        <section className="settSection">
+          <h2 className="settSectionTitle">Your Profile</h2>
+          <div className="settCard">
+            <div className="settRow">
+              <div className="settRowInfo">
+                <div className="settLabel">Name</div>
+                <div className="settDesc">What should we call you?</div>
+              </div>
+              <input
+                type="text"
+                value={profileName}
+                onChange={(e) => handleProfileNameChange(e.target.value)}
+                placeholder="Enter your name"
+                style={{
+                  padding: "6px 12px",
+                  borderRadius: 8,
+                  border: "1px solid var(--border, #ddd)",
+                  background: "var(--input-bg, #fff)",
+                  fontSize: 14,
+                  width: 200,
+                  color: "inherit",
+                }}
+              />
+            </div>
+
+            <div className="settDivider" />
+
+            <div className="settRow">
+              <div className="settRowInfo">
+                <div className="settLabel">Wake Time</div>
+                <div className="settDesc">When do you usually wake up?</div>
+              </div>
+              <input
+                type="time"
+                value={wakeTime}
+                onChange={(e) => handleWakeTimeChange(e.target.value)}
+                style={{
+                  padding: "6px 12px",
+                  borderRadius: 8,
+                  border: "1px solid var(--border, #ddd)",
+                  background: "var(--input-bg, #fff)",
+                  fontSize: 14,
+                  color: "inherit",
+                }}
+              />
+            </div>
+
+            <div className="settDivider" />
+
+            <div className="settRow">
+              <div className="settRowInfo">
+                <div className="settLabel">Bed Time</div>
+                <div className="settDesc">When do you usually go to sleep?</div>
+              </div>
+              <input
+                type="time"
+                value={bedTime}
+                onChange={(e) => handleBedTimeChange(e.target.value)}
+                style={{
+                  padding: "6px 12px",
+                  borderRadius: 8,
+                  border: "1px solid var(--border, #ddd)",
+                  background: "var(--input-bg, #fff)",
+                  fontSize: 14,
+                  color: "inherit",
+                }}
+              />
+            </div>
+
+            <div className="settDivider" />
+
+            <div className="settRow">
+              <div className="settRowInfo">
+                <div className="settLabel">Preferred Workout Time</div>
+                <div className="settDesc">When do you prefer to exercise?</div>
+              </div>
+              <div style={{ display: "flex", gap: 6 }}>
+                {["Morning", "Afternoon", "Evening"].map((opt) => (
+                  <button
+                    key={opt}
+                    type="button"
+                    onClick={() => handleWorkoutTimePrefChange(opt)}
+                    style={{
+                      padding: "6px 16px",
+                      borderRadius: 20,
+                      border: workoutTimePref === opt ? "2px solid #5B7CF5" : "1px solid var(--border, #ddd)",
+                      background: workoutTimePref === opt ? "#5B7CF5" : "transparent",
+                      color: workoutTimePref === opt ? "#fff" : "inherit",
+                      fontSize: 13,
+                      fontWeight: workoutTimePref === opt ? 600 : 400,
+                      cursor: "pointer",
+                      transition: "all 0.15s ease",
+                    }}
+                  >
+                    {opt}
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+        </section>
+
         {/* Spirituality */}
         <section className="settSection">
           <h2 className="settSectionTitle">Spirituality</h2>
@@ -269,6 +421,99 @@ export default function SettingsPage({ spiritualPath, onSpiritualPathChange }) {
           </div>
         </section>
 
+        {/* AI Coaching */}
+        <section className="settSection">
+          <h2 className="settSectionTitle">AI Coaching</h2>
+          <div className="settCard">
+            <div className="settDesc" style={{ padding: "0 0 12px" }}>
+              Add an API key to unlock AI-powered daily coaching, smart insights, and personalized recommendations. Your key is stored locally and never shared.
+            </div>
+
+            <div className="settRow">
+              <div className="settRowInfo">
+                <div className="settLabel">Provider</div>
+              </div>
+              <div style={{ display: "flex", gap: 6 }}>
+                {[
+                  { key: "openai", label: "OpenAI" },
+                  { key: "anthropic", label: "Anthropic" },
+                ].map(p => (
+                  <button
+                    key={p.key}
+                    type="button"
+                    style={{
+                      padding: "6px 16px", borderRadius: 20, border: "2px solid",
+                      borderColor: aiProvider === p.key ? "#5B7CF5" : "var(--line)",
+                      background: aiProvider === p.key ? "rgba(91,124,245,0.08)" : "var(--paper)",
+                      color: aiProvider === p.key ? "#5B7CF5" : "var(--ink)",
+                      fontWeight: 700, fontSize: 13, cursor: "pointer", fontFamily: "inherit",
+                    }}
+                    onClick={() => {
+                      setAiProvider(p.key);
+                      if (settingsApi) settingsApi.set("ai_provider", p.key);
+                    }}
+                  >{p.label}</button>
+                ))}
+              </div>
+            </div>
+
+            <div className="settDivider" />
+
+            <div className="settRow">
+              <div className="settRowInfo">
+                <div className="settLabel">API Key</div>
+                <div className="settDesc">{aiProvider === "openai" ? "From platform.openai.com/api-keys" : "From console.anthropic.com/settings/keys"}</div>
+              </div>
+              <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                <input
+                  type="password"
+                  className="input"
+                  style={{ width: 260, fontSize: 13 }}
+                  placeholder={aiProvider === "openai" ? "sk-..." : "sk-ant-..."}
+                  value={aiApiKey}
+                  onChange={e => {
+                    const val = e.target.value;
+                    setAiApiKey(val);
+                    setAiStatus(null);
+                    if (aiKeyTimerRef.current) clearTimeout(aiKeyTimerRef.current);
+                    aiKeyTimerRef.current = setTimeout(() => {
+                      if (settingsApi) settingsApi.set("ai_api_key", val);
+                    }, 500);
+                  }}
+                />
+                <button
+                  className="btn btnPrimary"
+                  type="button"
+                  disabled={!aiApiKey || aiStatus === "testing"}
+                  onClick={async () => {
+                    const aiApi = typeof window !== "undefined" ? window.aiApi : null;
+                    if (!aiApi) return;
+                    setAiStatus("testing");
+                    const result = await aiApi.chat(
+                      [
+                        { role: "system", content: "Respond with exactly: OK" },
+                        { role: "user", content: "Test" },
+                      ],
+                      { provider: aiProvider, apiKey: aiApiKey, maxTokens: 10 }
+                    );
+                    if (result.error) {
+                      setAiStatus("error");
+                      showMessage("error", result.error);
+                    } else {
+                      setAiStatus("success");
+                      showMessage("success", "AI connection working!");
+                    }
+                  }}
+                >
+                  {aiStatus === "testing" ? "Testing..." : "Test"}
+                </button>
+                {aiStatus === "success" && <span style={{ color: "#27ae60", fontWeight: 700, fontSize: 16 }}>{"\u2713"}</span>}
+                {aiStatus === "error" && <span style={{ color: "#e74c3c", fontWeight: 700, fontSize: 16 }}>!</span>}
+              </div>
+            </div>
+          </div>
+        </section>
+
         {/* Tracking Sources */}
         <section className="settSection">
           <h2 className="settSectionTitle">Tracking Sources</h2>
@@ -278,7 +523,7 @@ export default function SettingsPage({ spiritualPath, onSpiritualPathChange }) {
             </div>
             <TrackingSourceRow
               name="Apple Health"
-              icon="\u231A"
+              icon={"\u231A"}
               desc="Sleep, steps, weight, heart rate, workouts"
               onSync={async () => {
                 if (!healthSyncApiRef) return;
@@ -302,7 +547,7 @@ export default function SettingsPage({ spiritualPath, onSpiritualPathChange }) {
             <div className="settSepLine" />
             <TrackingSourceRow
               name="Hevy"
-              icon="\u{1F3CB}\uFE0F"
+              icon={"\u{1F3CB}\uFE0F"}
               desc="Workout sets, reps, and weights via CSV import"
               buttonLabel="Import CSV"
               onSync={null}
@@ -311,7 +556,7 @@ export default function SettingsPage({ spiritualPath, onSpiritualPathChange }) {
             <div className="settSepLine" />
             <TrackingSourceRow
               name="MyFitnessPal"
-              icon="\u{1F34E}"
+              icon={"\u{1F34E}"}
               desc="Calories, protein, carbs, fat from PDF export"
               buttonLabel="Import PDF"
               onSync={handleMfpImport}
@@ -319,7 +564,7 @@ export default function SettingsPage({ spiritualPath, onSpiritualPathChange }) {
             <div className="settSepLine" />
             <TrackingSourceRow
               name="Apple Calendar"
-              icon="\u{1F4C5}"
+              icon={"\u{1F4C5}"}
               desc="Events and schedule for auto-planning"
               buttonLabel="Coming Soon"
               onSync={null}

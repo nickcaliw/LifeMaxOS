@@ -59,6 +59,38 @@ app.whenReady().then(() => {
   ipcMain.handle("workout:getRange", (_e, s, e) => db.getWorkoutLogsRange(s, e));
   ipcMain.handle("workout:allDates", () => db.getWorkoutLogDates());
 
+  // Health Intelligence
+  ipcMain.handle("hi:getReadiness", (_e, date) => db.getReadiness(date));
+  ipcMain.handle("hi:saveReadiness", (_e, date, data) => db.upsertReadiness(date, data));
+  ipcMain.handle("hi:getReadinessRange", (_e, s, e) => db.getReadinessRange(s, e));
+  ipcMain.handle("hi:getRecommendations", (_e, date) => db.getHealthRecommendations(date));
+  ipcMain.handle("hi:saveRecommendations", (_e, date, recs) => db.saveHealthRecommendations(date, recs));
+  ipcMain.handle("hi:getAlerts", (_e, limit) => db.getHealthAlerts(limit));
+  ipcMain.handle("hi:saveAlert", (_e, alert) => db.saveHealthAlert(alert));
+  ipcMain.handle("hi:dismissAlert", (_e, id) => db.dismissHealthAlert(id));
+  ipcMain.handle("hi:saveNutritionAdj", (_e, adj) => db.saveNutritionAdjustment(adj));
+  ipcMain.handle("hi:getNutritionAdj", (_e, date) => db.getNutritionAdjustments(date));
+
+  // Mesocycle
+  ipcMain.handle("meso:getActive", () => db.getActiveMesocycle());
+  ipcMain.handle("meso:get", (_e, id) => db.getMesocycle(id));
+  ipcMain.handle("meso:save", (_e, id, data) => db.upsertMesocycle(id, data));
+  ipcMain.handle("meso:deactivateAll", () => db.deactivateAllMesocycles());
+  ipcMain.handle("meso:list", () => db.listMesocycles());
+  ipcMain.handle("meso:getWeeks", (_e, mesoId) => db.getMesoWeeks(mesoId));
+  ipcMain.handle("meso:saveWeek", (_e, id, mesoId, weekNum, data) => db.upsertMesoWeek(id, mesoId, weekNum, data));
+  ipcMain.handle("meso:getDays", (_e, weekId) => db.getMesoDays(weekId));
+  ipcMain.handle("meso:getDaysByDate", (_e, s, e) => db.getMesoDaysByDate(s, e));
+  ipcMain.handle("meso:getDay", (_e, id) => db.getMesoDay(id));
+  ipcMain.handle("meso:saveDay", (_e, id, data) => db.upsertMesoDay(id, data));
+  ipcMain.handle("meso:getExercises", (_e, dayId) => db.getMesoExercises(dayId));
+  ipcMain.handle("meso:getAllExercises", (_e, mesoId) => db.getAllMesoExercises(mesoId));
+  ipcMain.handle("meso:getAllDays", (_e, mesoId) => db.getAllMesoDays(mesoId));
+  ipcMain.handle("meso:saveExercise", (_e, id, data) => db.upsertMesoExercise(id, data));
+  ipcMain.handle("meso:getSets", (_e, exId) => db.getMesoSets(exId));
+  ipcMain.handle("meso:saveSet", (_e, id, data) => db.upsertMesoSet(id, data));
+  ipcMain.handle("meso:bulkInsert", (_e, weeks, days, exercises, sets) => db.bulkInsertMesoData(weeks, days, exercises, sets));
+
   // Sync State
   ipcMain.handle("sync:get", (_e, source) => db.getSyncState(source));
   ipcMain.handle("sync:save", (_e, source, data) => db.upsertSyncState(source, data));
@@ -268,6 +300,65 @@ app.whenReady().then(() => {
 
       inputStream.pipe(parser);
     });
+  });
+
+  // AI Coaching Engine
+  ipcMain.handle("ai:chat", async (_e, messages, options) => {
+    const provider = options?.provider || "openai";
+    const apiKey = options?.apiKey;
+    if (!apiKey) return { error: "No API key provided" };
+
+    try {
+      if (provider === "anthropic") {
+        const response = await fetch("https://api.anthropic.com/v1/messages", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "x-api-key": apiKey,
+            "anthropic-version": "2023-06-01",
+          },
+          body: JSON.stringify({
+            model: options?.model || "claude-sonnet-4-20250514",
+            max_tokens: options?.maxTokens || 500,
+            system: messages.find(m => m.role === "system")?.content || "",
+            messages: messages.filter(m => m.role !== "system").map(m => ({
+              role: m.role,
+              content: m.content,
+            })),
+          }),
+        });
+        if (!response.ok) {
+          const err = await response.text();
+          return { error: `Anthropic API error: ${response.status} ${err}` };
+        }
+        const data = await response.json();
+        return { content: data.content?.[0]?.text || "" };
+      } else {
+        // OpenAI compatible
+        const baseUrl = options?.baseUrl || "https://api.openai.com/v1";
+        const response = await fetch(`${baseUrl}/chat/completions`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "Authorization": `Bearer ${apiKey}`,
+          },
+          body: JSON.stringify({
+            model: options?.model || "gpt-4o-mini",
+            messages: messages,
+            max_tokens: options?.maxTokens || 500,
+            temperature: options?.temperature || 0.7,
+          }),
+        });
+        if (!response.ok) {
+          const err = await response.text();
+          return { error: `OpenAI API error: ${response.status} ${err}` };
+        }
+        const data = await response.json();
+        return { content: data.choices?.[0]?.message?.content || "" };
+      }
+    } catch (err) {
+      return { error: `AI request failed: ${err.message}` };
+    }
   });
 
   // Life Orchestrator — Daily Plans

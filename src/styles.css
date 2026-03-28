@@ -2176,6 +2176,11 @@ body{
   align-items: center;
   gap: 14px;
 }
+.dashOrchBtnActive{
+  background: var(--accent-soft, rgba(91,124,245,0.08));
+  border-color: var(--accent);
+  color: var(--accent);
+}
 .dashStreakBadge{
   font-size: 13px;
   font-weight: 700;

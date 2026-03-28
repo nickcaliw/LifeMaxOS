@@ -12,6 +12,9 @@ import StarRating from "../components/StarRating.jsx";
 import OrchestratorView from "../components/OrchestratorView.jsx";
 import useOrchestrator from "../hooks/useOrchestrator.js";
 import useHealthSync from "../hooks/useHealthSync.js";
+import useHealthIntelligence from "../hooks/useHealthIntelligence.js";
+import ReadinessCard from "../components/ReadinessCard.jsx";
+import HealthRecommendations from "../components/HealthRecommendations.jsx";
 import { ConfettiCelebration, MilestoneToast } from "../components/Celebration.jsx";
 import { generateSmartInsights } from "../lib/smartInsights.js";
 
@@ -52,6 +55,8 @@ export default function DashboardPage({ onNavigate, spiritualPath: spPath }) {
 
   const { habits: HABITS_LIST } = useHabits();
   const { plan: orchPlan, score: orchScore, loading: orchLoading } = useOrchestrator();
+  const { readiness: hiReadiness, recommendations: hiRecs, alerts: hiAlerts, dismissAlert: hiDismiss } = useHealthIntelligence();
+  const [showOrchestrator, setShowOrchestrator] = useState(false);
   const { syncStatus: healthSync } = useHealthSync();
   const [userName, setUserName] = useState("");
 
@@ -60,6 +65,7 @@ export default function DashboardPage({ onNavigate, spiritualPath: spPath }) {
   const [plannerTab, setPlannerTab] = useState("planner");
   const [weightUnit, setWeightUnit] = useState("lbs");
   const saveTimer = useRef(null);
+  const autoCheckRanRef = useRef(false);
 
   // ── Widget state ──
   const [workoutLog, setWorkoutLog] = useState(null);
@@ -304,6 +310,57 @@ export default function DashboardPage({ onNavigate, spiritualPath: spPath }) {
   const suppDone = supplements.filter(s => !!suppLog[s.id]).length;
   const suppPct = suppTotal ? Math.round((suppDone / suppTotal) * 100) : 0;
 
+  // ── Auto-check habits based on tracked data ──
+  useEffect(() => {
+    if (!dayData?.habits || autoCheckRanRef.current) return;
+    // Wait until core data sources have been attempted (non-null means loaded)
+    if (sleepData === null && waterData === null && workoutLog === null) return;
+
+    autoCheckRanRef.current = true;
+
+    const habits = dayData.habits;
+    const updated = {};
+    let changed = false;
+
+    for (const [name, checked] of Object.entries(habits)) {
+      if (checked) continue; // already checked, never uncheck
+      const lower = name.toLowerCase();
+
+      let shouldCheck = false;
+
+      if (lower.includes("sleep")) {
+        shouldCheck = sleepData?.hours >= 7;
+      } else if (lower.includes("hydration") || lower.includes("water")) {
+        shouldCheck = waterData?.glasses >= 8;
+      } else if (lower.includes("strength") || lower.includes("training") || lower.includes("hevy")) {
+        shouldCheck = workoutLog?.completed === true;
+      } else if (lower.includes("weigh")) {
+        shouldCheck = !!(dayData.weightAm || dayData.weightPm);
+      } else if (lower.includes("creatine") || lower.includes("supplement")) {
+        shouldCheck = suppDone > 0;
+      } else if (lower.includes("macro") || lower.includes("tracking") || lower.includes("myf")) {
+        shouldCheck = dayData.nutrition?.calories > 0;
+      }
+
+      if (shouldCheck) {
+        updated[name] = true;
+        changed = true;
+      }
+    }
+
+    if (changed) {
+      updateDay(prev => ({
+        ...prev,
+        habits: { ...prev.habits, ...updated },
+      }));
+    }
+  }, [dayData, sleepData, waterData, workoutLog, suppDone, updateDay]);
+
+  // Reset auto-check flag when date changes
+  useEffect(() => {
+    autoCheckRanRef.current = false;
+  }, [todayStr]);
+
   const { done: habitProgress_done, total: habitProgress_total, pct: habitProgress_pct } = progressFor(day, HABITS_LIST);
 
   const bestByHabit = useMemo(() => {
@@ -465,6 +522,20 @@ export default function DashboardPage({ onNavigate, spiritualPath: spPath }) {
           </div>
         </div>
         <div className="dashTopbarRight">
+          {orchPlan && (
+            <button
+              className={`btn ${showOrchestrator ? "dashOrchBtnActive" : ""}`}
+              onClick={() => setShowOrchestrator(p => !p)}
+              type="button"
+              title="Life Orchestrator"
+              style={{ marginRight: 4 }}
+            >
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <circle cx="12" cy="12" r="3" /><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42" />
+              </svg>
+              Orchestrator
+            </button>
+          )}
           {momentumStreak.current > 0 && (
             <div className="dashStreakBadge">🔥 {momentumStreak.current}d</div>
           )}
@@ -488,55 +559,68 @@ export default function DashboardPage({ onNavigate, spiritualPath: spPath }) {
         {/* ── LEFT COLUMN: Life Orchestrator + Key Widgets ── */}
         <div className="dashLeft">
 
-          {/* Orchestrator: Readiness + Priorities + Schedule + Habits + Alerts */}
-          {orchPlan ? (
+          {/* Orchestrator — toggled */}
+          {showOrchestrator && orchPlan && (
             <OrchestratorView plan={orchPlan} score={orchScore} onNavigate={onNavigate} />
-          ) : (
-            <>
-              {/* Fallback: show insights + reminders when orchestrator isn't ready */}
-              {dailyAffirmation && (
-                <div className="dashAffirmation">
-                  <div className="dashAffirmationText">{dailyAffirmation.text}</div>
-                </div>
-              )}
-              <div className="dashInsightsStack">
-                {insights.length > 0 && (
-                  <div className="dashInsights">
-                    <div className="dashInsightsTitle">Insights</div>
-                    {insights.slice(0, 5).map((tip, i) => (
-                      <div key={i} className={`dashInsightItem dashInsight-${tip.type}`}>
-                        <span className="dashInsightIcon">
-                          {tip.emoji || (tip.type === "good" ? "\u2713" : tip.type === "warn" ? "!" : "\u{1F4A1}")}
-                        </span>
-                        {tip.text}
-                      </div>
-                    ))}
+          )}
+
+          {/* Affirmation */}
+          {dailyAffirmation && (
+            <div className="dashAffirmation">
+              <div className="dashAffirmationText">{dailyAffirmation.text}</div>
+            </div>
+          )}
+
+          {/* Insights + Reminders — always shown */}
+          <div className="dashInsightsStack">
+            {insights.length > 0 && (
+              <div className="dashInsights">
+                <div className="dashInsightsTitle">Insights</div>
+                {insights.slice(0, 5).map((tip, i) => (
+                  <div key={i} className={`dashInsightItem dashInsight-${tip.type}`}>
+                    <span className="dashInsightIcon">
+                      {tip.emoji || (tip.type === "good" ? "\u2713" : tip.type === "warn" ? "!" : "\u{1F4A1}")}
+                    </span>
+                    {tip.text}
                   </div>
-                )}
-                {reminders.length > 0 ? (
-                  <div className="dashReminders">
-                    <div className="dashRemindersHeader">
-                      <div className="dashRemindersTitle">Reminders</div>
-                      <div className="dashRemindersBadge">{reminders.length}</div>
-                    </div>
-                    <div className="dashRemindersList">
-                      {reminders.map((r, i) => (
-                        <button key={i} className="dashReminderItem" onClick={() => onNavigate(r.page)} type="button">
-                          <span className="dashReminderIcon">{r.icon}</span>
-                          <span className="dashReminderText">{r.text}</span>
-                          <span className="dashReminderArrow">{"\u203A"}</span>
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                ) : (
-                  <div className="dashReminders dashRemindersDone">
-                    <div className="dashRemindersDoneIcon">{"\u{1F389}"}</div>
-                    <div className="dashRemindersDoneText">All caught up!</div>
-                  </div>
-                )}
+                ))}
               </div>
-            </>
+            )}
+            {reminders.length > 0 ? (
+              <div className="dashReminders">
+                <div className="dashRemindersHeader">
+                  <div className="dashRemindersTitle">Reminders</div>
+                  <div className="dashRemindersBadge">{reminders.length}</div>
+                </div>
+                <div className="dashRemindersList">
+                  {reminders.map((r, i) => (
+                    <button key={i} className="dashReminderItem" onClick={() => onNavigate(r.page)} type="button">
+                      <span className="dashReminderIcon">{r.icon}</span>
+                      <span className="dashReminderText">{r.text}</span>
+                      <span className="dashReminderArrow">{"\u203A"}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            ) : (
+              <div className="dashReminders dashRemindersDone">
+                <div className="dashRemindersDoneIcon">{"\u{1F389}"}</div>
+                <div className="dashRemindersDoneText">All caught up!</div>
+              </div>
+            )}
+          </div>
+
+          {/* Readiness + Health Recommendations */}
+          {hiReadiness && (
+            <ReadinessCard
+              score={hiReadiness.score}
+              category={hiReadiness.category}
+              explanation={hiReadiness.explanation}
+              components={hiReadiness.components}
+            />
+          )}
+          {hiRecs && hiRecs.length > 0 && (
+            <HealthRecommendations recommendations={hiRecs} />
           )}
 
           {/* Score Breakdown (toggled from topbar) */}

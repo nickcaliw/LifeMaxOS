@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react";
+import useAiCoaching from "../hooks/useAiCoaching.js";
 
 const DAY_TYPE_CONFIG = {
   peak:     { emoji: "\u26A1", label: "Peak Day",     color: "#27ae60", bg: "#27ae6012" },
@@ -27,6 +28,7 @@ function AlertIcon({ priority }) {
 
 export default function OrchestratorView({ plan, score, onNavigate }) {
   const [showFullSchedule, setShowFullSchedule] = useState(false);
+  const { message: aiMessage, loading: aiLoading } = useAiCoaching(plan);
 
   if (!plan) return null;
 
@@ -49,9 +51,9 @@ export default function OrchestratorView({ plan, score, onNavigate }) {
           <span className="orchReadinessLabel">{dtConfig.label}</span>
           <span className="orchReadinessScore">{plan.readiness?.score || 0}</span>
         </div>
-        {plan.coachingMessage && (
-          <div className="orchCoaching">{plan.coachingMessage}</div>
-        )}
+        <div className="orchCoaching">
+          {aiLoading ? "Thinking..." : aiMessage || plan.coachingMessage || ""}
+        </div>
       </div>
 
       {/* ── Top 3 Priorities ── */}
@@ -129,7 +131,7 @@ export default function OrchestratorView({ plan, score, onNavigate }) {
       )}
 
       {/* ── Yesterday's Score ── */}
-      {score && (
+      {score && score.score > 0 && (
         <div className="orchSection">
           <div className="orchSectionTitle">Yesterday's Score</div>
           <div className="orchScoreRow">

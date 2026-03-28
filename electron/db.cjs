@@ -290,6 +290,162 @@ function initDb() {
     );
   `);
 
+  // ═══ Health Intelligence Tables ═══
+  db.exec(`CREATE TABLE IF NOT EXISTS health_readiness (
+    date TEXT PRIMARY KEY,
+    score INTEGER NOT NULL,
+    category TEXT NOT NULL,
+    explanation TEXT,
+    components_json TEXT,
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+  )`);
+  db.exec(`CREATE TABLE IF NOT EXISTS health_recommendations (
+    id TEXT PRIMARY KEY,
+    date TEXT NOT NULL,
+    category TEXT NOT NULL,
+    priority TEXT NOT NULL DEFAULT 'medium',
+    message TEXT NOT NULL,
+    action TEXT,
+    status TEXT NOT NULL DEFAULT 'active',
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+  )`);
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_health_recs_date ON health_recommendations(date)`);
+  db.exec(`CREATE TABLE IF NOT EXISTS health_alerts (
+    id TEXT PRIMARY KEY,
+    type TEXT NOT NULL,
+    date TEXT NOT NULL,
+    priority TEXT NOT NULL DEFAULT 'medium',
+    message TEXT NOT NULL,
+    action TEXT,
+    dismissed INTEGER NOT NULL DEFAULT 0,
+    cooldown_until TEXT,
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+  )`);
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_health_alerts_date ON health_alerts(date)`);
+  db.exec(`CREATE TABLE IF NOT EXISTS nutrition_adjustments (
+    id TEXT PRIMARY KEY,
+    date TEXT NOT NULL,
+    adjustment_type TEXT NOT NULL,
+    current_value REAL,
+    recommended_value REAL,
+    reason TEXT,
+    accepted INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+  )`);
+
+  // ═══ Mesocycle Tables ═══
+  db.exec(`CREATE TABLE IF NOT EXISTS mesocycles (
+    id TEXT PRIMARY KEY,
+    profile_json TEXT NOT NULL,
+    config_json TEXT NOT NULL,
+    template_id TEXT,
+    start_date TEXT NOT NULL,
+    end_date TEXT,
+    status TEXT NOT NULL DEFAULT 'active',
+    completion_summary_json TEXT,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+  )`);
+  db.exec(`CREATE TABLE IF NOT EXISTS meso_weeks (
+    id TEXT PRIMARY KEY,
+    meso_id TEXT NOT NULL,
+    week_number INTEGER NOT NULL,
+    type TEXT NOT NULL DEFAULT 'training',
+    volume_targets_json TEXT,
+    adjustments_json TEXT,
+    session_rpe_avg REAL,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+    UNIQUE(meso_id, week_number)
+  )`);
+  db.exec(`CREATE TABLE IF NOT EXISTS meso_days (
+    id TEXT PRIMARY KEY,
+    week_id TEXT NOT NULL,
+    meso_id TEXT NOT NULL,
+    day_number INTEGER NOT NULL,
+    date TEXT,
+    label TEXT NOT NULL,
+    target_muscles_json TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'scheduled',
+    started_at TEXT, completed_at TEXT,
+    duration_minutes INTEGER,
+    session_rpe INTEGER,
+    total_volume_lbs REAL,
+    notes TEXT,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+  )`);
+  db.exec(`CREATE TABLE IF NOT EXISTS meso_exercises (
+    id TEXT PRIMARY KEY,
+    day_id TEXT NOT NULL,
+    meso_id TEXT NOT NULL,
+    exercise_id TEXT NOT NULL,
+    exercise_name TEXT NOT NULL,
+    muscle_group TEXT NOT NULL,
+    order_index INTEGER NOT NULL,
+    target_sets INTEGER NOT NULL,
+    target_rep_low INTEGER NOT NULL,
+    target_rep_high INTEGER NOT NULL,
+    target_rir INTEGER NOT NULL,
+    target_weight REAL,
+    rest_seconds INTEGER NOT NULL DEFAULT 120,
+    notes TEXT,
+    pump_rating INTEGER,
+    soreness_rating INTEGER,
+    difficulty_rating INTEGER,
+    joint_discomfort INTEGER NOT NULL DEFAULT 0,
+    mmc_rating INTEGER,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+  )`);
+  db.exec(`CREATE TABLE IF NOT EXISTS meso_sets (
+    id TEXT PRIMARY KEY,
+    exercise_assignment_id TEXT NOT NULL,
+    set_number INTEGER NOT NULL,
+    set_type TEXT NOT NULL DEFAULT 'working',
+    target_weight REAL,
+    target_reps INTEGER,
+    actual_weight REAL,
+    actual_reps INTEGER,
+    actual_rir INTEGER,
+    completed INTEGER NOT NULL DEFAULT 0,
+    completed_at TEXT,
+    notes TEXT,
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+  )`);
+  db.exec(`CREATE TABLE IF NOT EXISTS meso_adaptations (
+    id TEXT PRIMARY KEY,
+    meso_id TEXT NOT NULL,
+    week_number INTEGER NOT NULL,
+    muscle_group TEXT NOT NULL,
+    action TEXT NOT NULL,
+    previous_value TEXT,
+    new_value TEXT,
+    reason TEXT NOT NULL,
+    data_json TEXT,
+    accepted INTEGER NOT NULL DEFAULT 1,
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+  )`);
+  db.exec(`CREATE TABLE IF NOT EXISTS volume_landmarks (
+    id TEXT PRIMARY KEY,
+    muscle_group TEXT NOT NULL UNIQUE,
+    personal_mev INTEGER,
+    personal_mav INTEGER,
+    personal_mrv INTEGER,
+    confidence REAL NOT NULL DEFAULT 0,
+    data_points INTEGER DEFAULT 0,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+  )`);
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_meso_weeks_meso ON meso_weeks(meso_id)`);
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_meso_days_week ON meso_days(week_id)`);
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_meso_days_meso ON meso_days(meso_id)`);
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_meso_days_date ON meso_days(date)`);
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_meso_exercises_day ON meso_exercises(day_id)`);
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_meso_exercises_meso ON meso_exercises(meso_id)`);
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_meso_sets_exercise ON meso_sets(exercise_assignment_id)`);
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_meso_adapt_meso ON meso_adaptations(meso_id, week_number)`);
+
   // Workout Plans
   db.exec(`
     CREATE TABLE IF NOT EXISTS workout_plans (
@@ -1017,6 +1173,196 @@ function bulkInsertSchedule(entries) {
   return { ok: true };
 }
 
+// --- Health Intelligence ---
+function getReadiness(date) {
+  const d = initDb();
+  const row = d.prepare("SELECT * FROM health_readiness WHERE date = ?").get(date);
+  if (!row) return null;
+  return { ...row, components: row.components_json ? JSON.parse(row.components_json) : null };
+}
+function upsertReadiness(date, data) {
+  const d = initDb();
+  d.prepare(`INSERT INTO health_readiness (date, score, category, explanation, components_json, created_at) VALUES (?,?,?,?,?,?)
+    ON CONFLICT(date) DO UPDATE SET score=excluded.score, category=excluded.category, explanation=excluded.explanation, components_json=excluded.components_json
+  `).run(date, data.score, data.category, data.explanation || null, data.components ? JSON.stringify(data.components) : null, new Date().toISOString());
+  return { ok: true };
+}
+function getReadinessRange(start, end) {
+  const d = initDb();
+  return d.prepare("SELECT * FROM health_readiness WHERE date >= ? AND date <= ? ORDER BY date").all(start, end)
+    .map(r => ({ ...r, components: r.components_json ? JSON.parse(r.components_json) : null }));
+}
+function getHealthRecommendations(date) {
+  const d = initDb();
+  return d.prepare("SELECT * FROM health_recommendations WHERE date = ? AND status = 'active' ORDER BY CASE priority WHEN 'high' THEN 1 WHEN 'medium' THEN 2 ELSE 3 END").all(date);
+}
+function saveHealthRecommendations(date, recs) {
+  const d = initDb();
+  const now = new Date().toISOString();
+  // Clear old recs for this date
+  d.prepare("DELETE FROM health_recommendations WHERE date = ?").run(date);
+  const stmt = d.prepare("INSERT INTO health_recommendations (id, date, category, priority, message, action, status, created_at) VALUES (?,?,?,?,?,?,?,?)");
+  for (const r of recs) {
+    stmt.run(r.id || require("crypto").randomUUID(), date, r.category, r.priority || "medium", r.message, r.action || null, "active", now);
+  }
+  return { ok: true };
+}
+function getHealthAlerts(limit) {
+  const d = initDb();
+  return d.prepare("SELECT * FROM health_alerts WHERE dismissed = 0 ORDER BY CASE priority WHEN 'high' THEN 1 WHEN 'medium' THEN 2 ELSE 3 END LIMIT ?").all(limit || 10);
+}
+function saveHealthAlert(alert) {
+  const d = initDb();
+  d.prepare(`INSERT OR REPLACE INTO health_alerts (id, type, date, priority, message, action, dismissed, cooldown_until, created_at) VALUES (?,?,?,?,?,?,?,?,?)
+  `).run(alert.id || require("crypto").randomUUID(), alert.type, alert.date, alert.priority || "medium", alert.message, alert.action || null, alert.dismissed || 0, alert.cooldown_until || null, new Date().toISOString());
+  return { ok: true };
+}
+function dismissHealthAlert(id) {
+  const d = initDb();
+  d.prepare("UPDATE health_alerts SET dismissed = 1 WHERE id = ?").run(id);
+  return { ok: true };
+}
+function saveNutritionAdjustment(adj) {
+  const d = initDb();
+  d.prepare(`INSERT OR REPLACE INTO nutrition_adjustments (id, date, adjustment_type, current_value, recommended_value, reason, accepted, created_at) VALUES (?,?,?,?,?,?,?,?)
+  `).run(adj.id || require("crypto").randomUUID(), adj.date, adj.adjustment_type, adj.current_value || null, adj.recommended_value || null, adj.reason || null, adj.accepted || 0, new Date().toISOString());
+  return { ok: true };
+}
+function getNutritionAdjustments(date) {
+  const d = initDb();
+  return d.prepare("SELECT * FROM nutrition_adjustments WHERE date = ? ORDER BY created_at DESC").all(date);
+}
+
+// --- Mesocycles ---
+function getActiveMesocycle() {
+  const d = initDb();
+  const row = d.prepare("SELECT * FROM mesocycles WHERE status = 'active' ORDER BY created_at DESC LIMIT 1").get();
+  if (!row) return null;
+  return { ...row, profile: JSON.parse(row.profile_json), config: JSON.parse(row.config_json), completion_summary: row.completion_summary_json ? JSON.parse(row.completion_summary_json) : null };
+}
+function getMesocycle(id) {
+  const d = initDb();
+  const row = d.prepare("SELECT * FROM mesocycles WHERE id = ?").get(id);
+  if (!row) return null;
+  return { ...row, profile: JSON.parse(row.profile_json), config: JSON.parse(row.config_json), completion_summary: row.completion_summary_json ? JSON.parse(row.completion_summary_json) : null };
+}
+function upsertMesocycle(id, data) {
+  const d = initDb();
+  const now = new Date().toISOString();
+  d.prepare(`INSERT INTO mesocycles (id, profile_json, config_json, template_id, start_date, end_date, status, completion_summary_json, created_at, updated_at)
+    VALUES (?,?,?,?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET profile_json=excluded.profile_json, config_json=excluded.config_json, template_id=excluded.template_id, start_date=excluded.start_date, end_date=excluded.end_date, status=excluded.status, completion_summary_json=excluded.completion_summary_json, updated_at=excluded.updated_at
+  `).run(id, JSON.stringify(data.profile || {}), JSON.stringify(data.config || {}), data.template_id || null, data.start_date, data.end_date || null, data.status || 'active', data.completion_summary ? JSON.stringify(data.completion_summary) : null, now, now);
+  return { ok: true };
+}
+function deactivateAllMesocycles() {
+  const d = initDb();
+  d.prepare("UPDATE mesocycles SET status = 'completed', updated_at = ? WHERE status = 'active'").run(new Date().toISOString());
+  return { ok: true };
+}
+function listMesocycles() {
+  const d = initDb();
+  return d.prepare("SELECT id, template_id, start_date, end_date, status, created_at FROM mesocycles ORDER BY created_at DESC").all();
+}
+
+// --- Meso Weeks ---
+function getMesoWeeks(mesoId) {
+  const d = initDb();
+  return d.prepare("SELECT * FROM meso_weeks WHERE meso_id = ? ORDER BY week_number").all(mesoId)
+    .map(r => ({ ...r, volume_targets: r.volume_targets_json ? JSON.parse(r.volume_targets_json) : null, adjustments: r.adjustments_json ? JSON.parse(r.adjustments_json) : null }));
+}
+function upsertMesoWeek(id, mesoId, weekNumber, data) {
+  const d = initDb();
+  const now = new Date().toISOString();
+  d.prepare(`INSERT INTO meso_weeks (id, meso_id, week_number, type, volume_targets_json, adjustments_json, session_rpe_avg, created_at, updated_at)
+    VALUES (?,?,?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET type=excluded.type, volume_targets_json=excluded.volume_targets_json, adjustments_json=excluded.adjustments_json, session_rpe_avg=excluded.session_rpe_avg, updated_at=excluded.updated_at
+  `).run(id, mesoId, weekNumber, data.type || 'training', data.volume_targets ? JSON.stringify(data.volume_targets) : null, data.adjustments ? JSON.stringify(data.adjustments) : null, data.session_rpe_avg || null, now, now);
+  return { ok: true };
+}
+
+// --- Meso Days ---
+function getMesoDays(weekId) {
+  const d = initDb();
+  return d.prepare("SELECT * FROM meso_days WHERE week_id = ? ORDER BY day_number").all(weekId)
+    .map(r => ({ ...r, target_muscles: JSON.parse(r.target_muscles_json) }));
+}
+function getMesoDaysByDate(startDate, endDate) {
+  const d = initDb();
+  return d.prepare("SELECT * FROM meso_days WHERE date >= ? AND date <= ? ORDER BY date").all(startDate, endDate)
+    .map(r => ({ ...r, target_muscles: JSON.parse(r.target_muscles_json) }));
+}
+function getMesoDay(id) {
+  const d = initDb();
+  const row = d.prepare("SELECT * FROM meso_days WHERE id = ?").get(id);
+  if (!row) return null;
+  return { ...row, target_muscles: JSON.parse(row.target_muscles_json) };
+}
+function upsertMesoDay(id, data) {
+  const d = initDb();
+  const now = new Date().toISOString();
+  d.prepare(`INSERT INTO meso_days (id, week_id, meso_id, day_number, date, label, target_muscles_json, status, started_at, completed_at, duration_minutes, session_rpe, total_volume_lbs, notes, created_at, updated_at)
+    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET status=excluded.status, started_at=excluded.started_at, completed_at=excluded.completed_at, duration_minutes=excluded.duration_minutes, session_rpe=excluded.session_rpe, total_volume_lbs=excluded.total_volume_lbs, notes=excluded.notes, updated_at=excluded.updated_at
+  `).run(id, data.week_id, data.meso_id, data.day_number, data.date || null, data.label, JSON.stringify(data.target_muscles || []), data.status || 'scheduled', data.started_at || null, data.completed_at || null, data.duration_minutes || null, data.session_rpe || null, data.total_volume_lbs || null, data.notes || null, now, now);
+  return { ok: true };
+}
+
+// --- Meso Exercises ---
+function getMesoExercises(dayId) {
+  const d = initDb();
+  return d.prepare("SELECT * FROM meso_exercises WHERE day_id = ? ORDER BY order_index").all(dayId);
+}
+function getAllMesoExercises(mesoId) {
+  const d = initDb();
+  return d.prepare("SELECT * FROM meso_exercises WHERE meso_id = ? ORDER BY day_id, order_index").all(mesoId);
+}
+function getAllMesoDays(mesoId) {
+  const d = initDb();
+  return d.prepare("SELECT * FROM meso_days WHERE meso_id = ? ORDER BY day_number").all(mesoId)
+    .map(r => ({ ...r, target_muscles: JSON.parse(r.target_muscles_json) }));
+}
+function upsertMesoExercise(id, data) {
+  const d = initDb();
+  const now = new Date().toISOString();
+  d.prepare(`INSERT INTO meso_exercises (id, day_id, meso_id, exercise_id, exercise_name, muscle_group, order_index, target_sets, target_rep_low, target_rep_high, target_rir, target_weight, rest_seconds, notes, pump_rating, soreness_rating, difficulty_rating, joint_discomfort, mmc_rating, created_at, updated_at)
+    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET target_sets=excluded.target_sets, target_rep_low=excluded.target_rep_low, target_rep_high=excluded.target_rep_high, target_rir=excluded.target_rir, target_weight=excluded.target_weight, notes=excluded.notes, pump_rating=excluded.pump_rating, soreness_rating=excluded.soreness_rating, difficulty_rating=excluded.difficulty_rating, joint_discomfort=excluded.joint_discomfort, mmc_rating=excluded.mmc_rating, updated_at=excluded.updated_at
+  `).run(id, data.day_id, data.meso_id, data.exercise_id, data.exercise_name, data.muscle_group, data.order_index, data.target_sets, data.target_rep_low, data.target_rep_high, data.target_rir, data.target_weight || null, data.rest_seconds || 120, data.notes || null, data.pump_rating || null, data.soreness_rating || null, data.difficulty_rating || null, data.joint_discomfort || 0, data.mmc_rating || null, now, now);
+  return { ok: true };
+}
+
+// --- Meso Sets ---
+function getMesoSets(exerciseAssignmentId) {
+  const d = initDb();
+  return d.prepare("SELECT * FROM meso_sets WHERE exercise_assignment_id = ? ORDER BY set_number").all(exerciseAssignmentId);
+}
+function upsertMesoSet(id, data) {
+  const d = initDb();
+  const now = new Date().toISOString();
+  d.prepare(`INSERT INTO meso_sets (id, exercise_assignment_id, set_number, set_type, target_weight, target_reps, actual_weight, actual_reps, actual_rir, completed, completed_at, notes, created_at)
+    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET actual_weight=excluded.actual_weight, actual_reps=excluded.actual_reps, actual_rir=excluded.actual_rir, completed=excluded.completed, completed_at=excluded.completed_at, notes=excluded.notes
+  `).run(id, data.exercise_assignment_id, data.set_number, data.set_type || 'working', data.target_weight || null, data.target_reps || null, data.actual_weight || null, data.actual_reps || null, data.actual_rir ?? null, data.completed || 0, data.completed_at || null, data.notes || null, now);
+  return { ok: true };
+}
+
+// --- Meso Bulk Insert ---
+function bulkInsertMesoData(weeks, days, exercises, sets) {
+  const d = initDb();
+  const now = new Date().toISOString();
+  const tx = d.transaction(() => {
+    const wStmt = d.prepare(`INSERT OR REPLACE INTO meso_weeks (id, meso_id, week_number, type, volume_targets_json, created_at, updated_at) VALUES (?,?,?,?,?,?,?)`);
+    for (const w of weeks) wStmt.run(w.id, w.meso_id, w.week_number, w.type || 'training', w.volume_targets ? JSON.stringify(w.volume_targets) : null, now, now);
+
+    const dStmt = d.prepare(`INSERT OR REPLACE INTO meso_days (id, week_id, meso_id, day_number, date, label, target_muscles_json, status, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?,?,?)`);
+    for (const day of days) dStmt.run(day.id, day.week_id, day.meso_id, day.day_number, day.date || null, day.label, JSON.stringify(day.target_muscles || []), 'scheduled', now, now);
+
+    const eStmt = d.prepare(`INSERT OR REPLACE INTO meso_exercises (id, day_id, meso_id, exercise_id, exercise_name, muscle_group, order_index, target_sets, target_rep_low, target_rep_high, target_rir, target_weight, rest_seconds, notes, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`);
+    for (const ex of exercises) eStmt.run(ex.id, ex.day_id, ex.meso_id, ex.exercise_id, ex.exercise_name, ex.muscle_group, ex.order_index, ex.target_sets, ex.target_rep_low, ex.target_rep_high, ex.target_rir, ex.target_weight || null, ex.rest_seconds || 120, ex.notes || null, now, now);
+
+    const sStmt = d.prepare(`INSERT OR REPLACE INTO meso_sets (id, exercise_assignment_id, set_number, set_type, target_weight, target_reps, created_at) VALUES (?,?,?,?,?,?,?)`);
+    for (const s of sets) sStmt.run(s.id, s.exercise_assignment_id, s.set_number, s.set_type || 'working', s.target_weight || null, s.target_reps || null, now);
+  });
+  tx();
+  return { ok: true };
+}
+
 // --- Sync State ---
 function getSyncState(source) {
   const d = initDb();
@@ -1128,6 +1474,11 @@ module.exports = {
   getScheduleForDate, getScheduleRange, upsertScheduleEntry, deleteScheduleForPlan, clearFutureSchedule, bulkInsertSchedule,
   getDailyPlan, upsertDailyPlan, getDailyPlansRange,
   getWeeklyPlan, upsertWeeklyPlan,
+  getReadiness, upsertReadiness, getReadinessRange, getHealthRecommendations, saveHealthRecommendations,
+  getHealthAlerts, saveHealthAlert, dismissHealthAlert, saveNutritionAdjustment, getNutritionAdjustments,
+  getActiveMesocycle, getMesocycle, upsertMesocycle, deactivateAllMesocycles, listMesocycles,
+  getMesoWeeks, upsertMesoWeek, getMesoDays, getMesoDaysByDate, getMesoDay, upsertMesoDay,
+  getMesoExercises, getAllMesoExercises, getAllMesoDays, upsertMesoExercise, getMesoSets, upsertMesoSet, bulkInsertMesoData,
   getSyncState, upsertSyncState, getAllSyncStates,
   addTrackingImport, getTrackingImports,
 };

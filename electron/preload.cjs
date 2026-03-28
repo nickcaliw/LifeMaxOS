@@ -8,6 +8,27 @@ contextBridge.exposeInMainWorld("plannerApi", {
 contextBridge.exposeInMainWorld("workoutApi", {
   get: inv("workout:get"), save: inv("workout:save"), getRange: inv("workout:getRange"), allDates: inv("workout:allDates"),
 });
+contextBridge.exposeInMainWorld("healthIntelApi", {
+  getReadiness: inv("hi:getReadiness"), saveReadiness: inv("hi:saveReadiness"),
+  getReadinessRange: inv("hi:getReadinessRange"),
+  getRecommendations: inv("hi:getRecommendations"), saveRecommendations: inv("hi:saveRecommendations"),
+  getAlerts: inv("hi:getAlerts"), saveAlert: inv("hi:saveAlert"), dismissAlert: inv("hi:dismissAlert"),
+  saveNutritionAdj: inv("hi:saveNutritionAdj"), getNutritionAdj: inv("hi:getNutritionAdj"),
+});
+contextBridge.exposeInMainWorld("mesoApi", {
+  getActive: inv("meso:getActive"), get: inv("meso:get"), save: inv("meso:save"),
+  deactivateAll: inv("meso:deactivateAll"), list: inv("meso:list"),
+  getWeeks: inv("meso:getWeeks"), saveWeek: inv("meso:saveWeek"),
+  getDays: inv("meso:getDays"), getDaysByDate: inv("meso:getDaysByDate"),
+  getDay: inv("meso:getDay"), saveDay: inv("meso:saveDay"),
+  getExercises: inv("meso:getExercises"), getAllExercises: inv("meso:getAllExercises"),
+  getAllDays: inv("meso:getAllDays"), saveExercise: inv("meso:saveExercise"),
+  getSets: inv("meso:getSets"), saveSet: inv("meso:saveSet"),
+  bulkInsert: inv("meso:bulkInsert"),
+});
+contextBridge.exposeInMainWorld("aiApi", {
+  chat: inv("ai:chat"),
+});
 contextBridge.exposeInMainWorld("syncApi", {
   get: inv("sync:get"), save: inv("sync:save"), getAll: inv("sync:getAll"),
 });

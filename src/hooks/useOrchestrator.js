@@ -174,12 +174,9 @@ export default function useOrchestrator() {
           /* noop */
         }
 
-        if (existing && existing.data && genId === 0) {
+        if (existing && existing.greeting && genId === 0) {
           // Plan already exists for today — reuse it
-          const planData =
-            typeof existing.data === "string"
-              ? JSON.parse(existing.data)
-              : existing.data;
+          const planData = existing;
 
           if (!cancelled) {
             setPlan(planData);

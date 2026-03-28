@@ -3,7 +3,9 @@ import { ymd, addDays, startOfWeekMonday } from "../lib/dates.js";
 import { parseHevyCsv } from "../lib/hevyCsv.js";
 import { generateSchedule } from "../lib/programBuilder.js";
 import ActiveWorkout from "../components/ActiveWorkout.jsx";
+import PostWorkoutFeedback from "../components/PostWorkoutFeedback.jsx";
 import WorkoutOnboarding from "../components/WorkoutOnboarding.jsx";
+import MesoOnboarding from "../components/MesoOnboarding.jsx";
 
 const workoutApi = typeof window !== "undefined" ? window.workoutApi : null;
 const dialogApi = typeof window !== "undefined" ? window.dialogApi : null;
@@ -11,6 +13,7 @@ const planApi = typeof window !== "undefined" ? window.planApi : null;
 const scheduleApi = typeof window !== "undefined" ? window.scheduleApi : null;
 const sleepApi = typeof window !== "undefined" ? window.sleepApi : null;
 const settingsApi = typeof window !== "undefined" ? window.settingsApi : null;
+const mesoApi = typeof window !== "undefined" ? window.mesoApi : null;
 
 // ───────────────────────── helpers ─────────────────────────
 
@@ -129,7 +132,10 @@ export default function WorkoutsPage() {
   const [monthDate, setMonthDate] = useState(new Date(today.getFullYear(), today.getMonth(), 1));
   const [monthLogs, setMonthLogs] = useState({});
   const [activeWorkoutMode, setActiveWorkoutMode] = useState(false);
+  const [showFeedback, setShowFeedback] = useState(null); // exercises array for feedback
   const [showOnboarding, setShowOnboarding] = useState(false);
+  const [showMesoOnboarding, setShowMesoOnboarding] = useState(false);
+  const [activeMeso, setActiveMeso] = useState(null);
   const [importStatus, setImportStatus] = useState(null);
   const [showProgram, setShowProgram] = useState(() => {
     try { return localStorage.getItem("wo_show_program") !== "false"; } catch { return true; }
@@ -142,6 +148,32 @@ export default function WorkoutsPage() {
       return next;
     });
   }, []);
+
+  // Load active mesocycle + its data
+  // Structure: mesoFull = { weeks: [{ ...week, days: [{ ...day, exercises: [...] }] }] }
+  const [mesoFull, setMesoFull] = useState(null);
+  const [mesoView, setMesoView] = useState("overview"); // overview | program
+
+  useEffect(() => {
+    if (!mesoApi) return;
+    mesoApi.getActive().then(async (m) => {
+      if (!m) return;
+      setActiveMeso(m);
+      const weeks = await mesoApi.getWeeks(m.id).catch(() => []);
+      // For each week, load its days. For each day, load its exercises.
+      const fullWeeks = [];
+      for (const week of (weeks || [])) {
+        const days = await mesoApi.getDays(week.id).catch(() => []);
+        const fullDays = [];
+        for (const day of (days || [])) {
+          const exercises = await mesoApi.getExercises(day.id).catch(() => []);
+          fullDays.push({ ...day, exercises: exercises || [] });
+        }
+        fullWeeks.push({ ...week, days: fullDays });
+      }
+      setMesoFull({ weeks: fullWeeks });
+    }).catch(err => console.error("[meso load]", err));
+  }, [showMesoOnboarding]);
 
   const { plan, setPlan, loading: planLoading } = useActivePlan();
   const weekSchedule = useWeekSchedule(weekStart);
@@ -410,9 +442,158 @@ export default function WorkoutsPage() {
       .slice(0, 2);
   }, [visibleSchedule, selectedDate]);
 
-  // Show onboarding
-  if (showOnboarding || (!planLoading && !plan)) {
-    return <WorkoutOnboarding onComplete={handleOnboardingComplete} onCancel={plan ? () => setShowOnboarding(false) : null} />;
+  // Handle mesocycle onboarding complete
+  const handleMesoComplete = useCallback(async (data) => {
+    if (!mesoApi || !data?.mesocycle) { setShowMesoOnboarding(false); return; }
+    const { mesocycle, profile, config, template } = data;
+
+    try {
+      // Deactivate old mesocycles
+      await mesoApi.deactivateAll();
+
+      const mesoId = mesocycle.mesoId || uuid();
+
+      // Save the mesocycle
+      await mesoApi.save(mesoId, {
+        profile: profile || mesocycle.metadata?.profile || {},
+        config: config || {},
+        template_id: template?.id || mesocycle.templateId || null,
+        start_date: mesocycle.startDate || config?.startDate || ymd(new Date()),
+        end_date: mesocycle.metadata?.endDate || null,
+        status: 'active',
+      });
+
+      // Transform data to match db column names
+      const dbWeeks = (mesocycle.weeks || []).map(w => ({
+        id: w.id,
+        meso_id: mesoId,
+        week_number: w.weekNumber,
+        type: w.isDeload ? 'deload' : 'training',
+        volume_targets: mesocycle.weeklyVolume || null,
+      }));
+
+      const dbDays = (mesocycle.days || []).map(d => ({
+        id: d.id,
+        week_id: d.weekId,
+        meso_id: mesoId,
+        day_number: d.dayNumber,
+        date: d.date || null,
+        label: d.label,
+        target_muscles: d.targetMuscles || [],
+      }));
+
+      const dbExercises = (mesocycle.exercises || []).map(ex => ({
+        id: ex.id,
+        day_id: ex.dayId,
+        meso_id: mesoId,
+        exercise_id: ex.exerciseId || ex.id,
+        exercise_name: ex.name,
+        muscle_group: ex.muscle,
+        order_index: ex.order || 1,
+        target_sets: ex.sets || 3,
+        target_rep_low: ex.repLow || 8,
+        target_rep_high: ex.repHigh || 12,
+        target_rir: ex.rirTarget || 3,
+        rest_seconds: ex.restSeconds || 120,
+      }));
+
+      // Generate set entries from exercises
+      const dbSets = [];
+      for (const ex of dbExercises) {
+        for (let s = 0; s < ex.target_sets; s++) {
+          dbSets.push({
+            id: uuid(),
+            exercise_assignment_id: ex.id,
+            set_number: s + 1,
+            set_type: 'working',
+            target_reps: ex.target_rep_high,
+          });
+        }
+      }
+
+      await mesoApi.bulkInsert(dbWeeks, dbDays, dbExercises, dbSets);
+
+      setActiveMeso(await mesoApi.getActive());
+      setShowMesoOnboarding(false);
+    } catch (err) {
+      console.error("[handleMesoComplete] Error saving mesocycle:", err);
+      setShowMesoOnboarding(false);
+    }
+  }, []);
+
+  // Show full program view — takes over the entire page
+  if (mesoView === "program" && mesoFull) {
+    return (
+      <div className="workoutsPage">
+        <style>{WO_STYLES}</style>
+        <div className="topbar">
+          <div className="topbarLeft">
+            <h1 className="pageTitle">Full Program</h1>
+            <div className="weekBadge">{mesoFull.weeks.length} WEEKS</div>
+          </div>
+          <div className="nav">
+            <button className="btn btnPrimary" onClick={() => setMesoView("overview")} type="button">Back to Workouts</button>
+          </div>
+        </div>
+        <div style={{ flex: 1, overflowY: "auto", padding: "16px 20px 40px" }}>
+          {mesoFull.weeks.map(week => (
+            <div key={week.id} style={{ marginBottom: 20, background: "var(--paper)", border: "1px solid var(--line2)", borderRadius: 12, overflow: "hidden" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "10px 14px", background: "var(--chip)", borderBottom: "1px solid var(--line2)" }}>
+                <strong style={{ fontSize: 14 }}>Week {week.week_number}</strong>
+                {week.type === "deload" && <span style={{ fontSize: 11, fontWeight: 700, color: "#27ae60", padding: "2px 8px", background: "rgba(39,174,96,0.1)", borderRadius: 999 }}>Deload</span>}
+                <span style={{ fontSize: 12, color: "var(--muted)", marginLeft: "auto" }}>RIR {week.rirLow !== undefined ? `${week.rirLow}-${week.rirHigh}` : ""}</span>
+              </div>
+              {week.days.map(day => (
+                <div key={day.id} style={{ borderBottom: "1px solid var(--line2)" }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", padding: "8px 14px", background: "rgba(91,124,245,0.03)" }}>
+                    <strong style={{ fontSize: 13 }}>{day.label}</strong>
+                    <span style={{ fontSize: 11, fontWeight: 600, color: "var(--accent)" }}>{(day.target_muscles || []).join(", ")}</span>
+                  </div>
+                  {day.exercises && day.exercises.length > 0 ? (
+                    <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
+                      <thead>
+                        <tr>
+                          <th style={{ textAlign: "left", padding: "4px 8px", fontSize: 10, fontWeight: 700, textTransform: "uppercase", color: "var(--muted)", borderBottom: "1px solid var(--line2)" }}>#</th>
+                          <th style={{ textAlign: "left", padding: "4px 8px", fontSize: 10, fontWeight: 700, textTransform: "uppercase", color: "var(--muted)", borderBottom: "1px solid var(--line2)" }}>Exercise</th>
+                          <th style={{ textAlign: "left", padding: "4px 8px", fontSize: 10, fontWeight: 700, textTransform: "uppercase", color: "var(--muted)", borderBottom: "1px solid var(--line2)" }}>Sets</th>
+                          <th style={{ textAlign: "left", padding: "4px 8px", fontSize: 10, fontWeight: 700, textTransform: "uppercase", color: "var(--muted)", borderBottom: "1px solid var(--line2)" }}>Reps</th>
+                          <th style={{ textAlign: "left", padding: "4px 8px", fontSize: 10, fontWeight: 700, textTransform: "uppercase", color: "var(--muted)", borderBottom: "1px solid var(--line2)" }}>RIR</th>
+                          <th style={{ textAlign: "left", padding: "4px 8px", fontSize: 10, fontWeight: 700, textTransform: "uppercase", color: "var(--muted)", borderBottom: "1px solid var(--line2)" }}>Rest</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {day.exercises.map((ex, i) => (
+                          <tr key={ex.id || i}>
+                            <td style={{ padding: "5px 8px", fontWeight: 800, color: "var(--muted)" }}>{i + 1}</td>
+                            <td style={{ padding: "5px 8px", fontWeight: 700, color: "var(--ink)" }}>{ex.exercise_name}</td>
+                            <td style={{ padding: "5px 8px", fontWeight: 600 }}>{ex.target_sets}</td>
+                            <td style={{ padding: "5px 8px", fontWeight: 600 }}>{ex.target_rep_low}-{ex.target_rep_high}</td>
+                            <td style={{ padding: "5px 8px", fontWeight: 600 }}>{ex.target_rir}</td>
+                            <td style={{ padding: "5px 8px", fontWeight: 600 }}>{ex.rest_seconds}s</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  ) : (
+                    <div style={{ padding: "8px 14px", fontSize: 12, color: "var(--muted)", fontStyle: "italic" }}>No exercises</div>
+                  )}
+                </div>
+              ))}
+            </div>
+          ))}
+        </div>
+      </div>
+    );
+  }
+
+  // Show mesocycle onboarding
+  if (showMesoOnboarding) {
+    return <MesoOnboarding onComplete={handleMesoComplete} onCancel={() => setShowMesoOnboarding(false)} />;
+  }
+
+  // Show program onboarding
+  if (showOnboarding || (!planLoading && !plan && !activeMeso)) {
+    return <WorkoutOnboarding onComplete={handleOnboardingComplete} onCancel={(plan || activeMeso) ? () => setShowOnboarding(false) : null} />;
   }
 
   return (
@@ -442,6 +623,18 @@ export default function WorkoutsPage() {
             </svg>
             {showProgram ? "Program" : "Program"}
           </button>
+          <button
+            className={`btn ${activeMeso ? "woProgramOnBtn" : ""}`}
+            onClick={() => setShowMesoOnboarding(true)}
+            title={activeMeso ? "Active Mesocycle" : "Start Mesocycle"}
+            type="button"
+            style={{ marginRight: 4 }}
+          >
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z" /><line x1="4" y1="22" x2="4" y2="15" />
+            </svg>
+            Meso
+          </button>
           <button className="btn" onClick={() => setShowOnboarding(true)} title="Change Program" type="button" style={{ marginRight: 4 }}>
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <circle cx="12" cy="12" r="3" /><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
@@ -457,6 +650,124 @@ export default function WorkoutsPage() {
       </div>
 
       {importStatus && <div className="woImportStatus">{importStatus}</div>}
+
+      {/* ═══ Active Mesocycle ═══ */}
+      {activeMeso && mesoFull && mesoFull.weeks.length > 0 && (() => {
+        const allWeeks = mesoFull.weeks;
+        const currentWeek = allWeeks.find(w =>
+          w.days.some(d => d.date && d.date >= todayStr)
+        ) || allWeeks[0];
+        const todayDay = currentWeek?.days.find(d => d.date === todayStr);
+
+        return (
+          <div className="woMesoOverview">
+            <div className="woMesoHeader">
+              <div className="woMesoTitle">{activeMeso.config?.templateName || activeMeso.config?.split || "Mesocycle"}</div>
+              <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                <div className="woMesoMeta">
+                  Week {currentWeek?.week_number || 1} of {allWeeks.length}
+                  {currentWeek?.type === 'deload' && <span className="woMesoDeloadBadge">Deload</span>}
+                </div>
+                <div className="woMesoViewToggle">
+                  <button className={`woMesoViewBtn ${mesoView === "overview" ? "woMesoViewBtnActive" : ""}`} onClick={() => setMesoView("overview")} type="button">This Week</button>
+                  <button className={`woMesoViewBtn ${mesoView === "program" ? "woMesoViewBtnActive" : ""}`} onClick={() => setMesoView("program")} type="button">Full Program</button>
+                </div>
+              </div>
+            </div>
+
+            <div className="woMesoTimeline">
+              {allWeeks.map(w => (
+                <div key={w.id} className={`woMesoWeekPill ${w.id === currentWeek?.id ? "woMesoWeekActive" : ""} ${w.type === "deload" ? "woMesoWeekDeload" : ""}`}>
+                  W{w.week_number}
+                </div>
+              ))}
+            </div>
+
+            {mesoView === "overview" ? (
+              <>
+                {currentWeek && currentWeek.days.length > 0 && (
+                  <div className="woMesoWeekDays">
+                    {currentWeek.days.map(d => {
+                      const isToday = d.date === todayStr;
+                      const isDone = d.status === 'completed';
+                      return (
+                        <div key={d.id} className={`woMesoDayCard ${isToday ? "woMesoDayToday" : ""} ${isDone ? "woMesoDayDone" : ""}`} onClick={() => d.date && setSelectedDate(d.date)}>
+                          <div className="woMesoDayLabel">{d.label}</div>
+                          <div className="woMesoDayDate">{d.date ? new Date(d.date + "T12:00:00").toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" }) : "TBD"}</div>
+                          <div className="woMesoDayMuscles">{(d.target_muscles || []).join(", ")}</div>
+                          {isDone && <span className="woMesoDayCheck">{"\u2713"}</span>}
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+
+                {todayDay && todayDay.exercises.length > 0 && (
+                  <div className="woMesoTodaySession">
+                    <div className="woMesoTodayTitle">Today: {todayDay.label}</div>
+                    <div className="woMesoTodayMuscles">{(todayDay.target_muscles || []).join(" / ")}</div>
+                    <div className="woMesoExList">
+                      {todayDay.exercises.map((ex, i) => (
+                        <div key={ex.id || i} className="woMesoExItem">
+                          <span className="woMesoExNum">{i + 1}</span>
+                          <span className="woMesoExName">{ex.exercise_name}</span>
+                          <span className="woMesoExTarget">{ex.target_sets} x {ex.target_rep_low}-{ex.target_rep_high} @ RIR {ex.target_rir}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {!todayDay && (
+                  <div className="woMesoRestMsg">Rest day. Next session: {currentWeek?.days.find(d => d.date > todayStr)?.label || "check your schedule"}</div>
+                )}
+              </>
+            ) : (
+              <div className="woMesoFullProgram">
+                {allWeeks.map(week => (
+                  <div key={week.id} className="woMesoFullWeek">
+                    <div className="woMesoFullWeekHeader">
+                      <span className="woMesoFullWeekLabel">Week {week.week_number}</span>
+                      {week.type === "deload" && <span className="woMesoDeloadBadge">Deload</span>}
+                    </div>
+                    <div className="woMesoFullWeekDays">
+                      {week.days.map(day => (
+                        <div key={day.id} className="woMesoFullDay">
+                          <div className="woMesoFullDayHeader">
+                            <div className="woMesoFullDayLabel">{day.label}</div>
+                            <div className="woMesoFullDayMuscles">{(day.target_muscles || []).join(", ")}</div>
+                          </div>
+                          {day.exercises.length > 0 ? (
+                            <table className="woMesoFullTable">
+                              <thead>
+                                <tr><th>#</th><th>Exercise</th><th>Sets</th><th>Reps</th><th>RIR</th><th>Rest</th></tr>
+                              </thead>
+                              <tbody>
+                                {day.exercises.map((ex, i) => (
+                                  <tr key={ex.id || i}>
+                                    <td className="woMesoFullNum">{i + 1}</td>
+                                    <td className="woMesoFullExName">{ex.exercise_name}</td>
+                                    <td>{ex.target_sets}</td>
+                                    <td>{ex.target_rep_low}-{ex.target_rep_high}</td>
+                                    <td>{ex.target_rir}</td>
+                                    <td>{ex.rest_seconds}s</td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          ) : (
+                            <div className="woMesoFullEmpty">No exercises assigned</div>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        );
+      })()}
 
       {/* View Toggle */}
       <div style={{ display: "flex", justifyContent: "center", marginBottom: 16 }}>
@@ -753,8 +1064,40 @@ export default function WorkoutsPage() {
         <ActiveWorkout
           workout={template}
           previousData={null}
-          onComplete={(result) => { saveLog(selectedDate, result); setActiveWorkoutMode(false); reload(); }}
+          onComplete={(result) => {
+            saveLog(selectedDate, result);
+            setActiveWorkoutMode(false);
+            // Show post-workout feedback if we have exercise data
+            const exs = (result?.exercises || []).map((ex, i) => ({
+              id: ex.id || `ex-${i}`,
+              exercise_name: ex.name || ex.exercise_name || `Exercise ${i + 1}`,
+              muscle_group: ex.muscle || ex.muscle_group || "",
+            }));
+            if (exs.length > 0) setShowFeedback(exs);
+            reload();
+          }}
           onCancel={() => setActiveWorkoutMode(false)}
+        />
+      )}
+
+      {/* Post-Workout Feedback */}
+      {showFeedback && (
+        <PostWorkoutFeedback
+          exercises={showFeedback}
+          onSave={async (feedback) => {
+            // Save feedback to meso_exercises if available
+            if (mesoApi && feedback.exerciseFeedback) {
+              for (const ef of feedback.exerciseFeedback) {
+                await mesoApi.saveExercise(ef.exerciseId, {
+                  pump_rating: ef.pump,
+                  soreness_rating: ef.soreness,
+                  difficulty_rating: ef.difficulty,
+                }).catch(() => {});
+              }
+            }
+            setShowFeedback(null);
+          }}
+          onCancel={() => setShowFeedback(null)}
         />
       )}
     </div>
@@ -842,6 +1185,297 @@ const WO_STYLES = `
 }
 
 /* Start button */
+/* Mesocycle overview */
+.woMesoOverview{
+  padding: 0 20px 16px;
+}
+.woMesoHeader{
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 10px;
+}
+.woMesoTitle{
+  font-size: 16px;
+  font-weight: 800;
+  color: var(--ink);
+}
+.woMesoMeta{
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--accent);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.woMesoDeloadBadge{
+  font-size: 10px;
+  font-weight: 700;
+  color: #27ae60;
+  padding: 2px 8px;
+  background: rgba(39,174,96,0.1);
+  border-radius: 999px;
+}
+.woMesoTimeline{
+  display: flex;
+  gap: 4px;
+  margin-bottom: 12px;
+}
+.woMesoWeekPill{
+  flex: 1;
+  text-align: center;
+  padding: 5px 0;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--muted);
+  background: var(--chip);
+  border-radius: 6px;
+  transition: all 0.15s;
+}
+.woMesoWeekActive{
+  background: var(--accent);
+  color: white;
+}
+.woMesoWeekDeload{
+  background: rgba(39,174,96,0.1);
+  color: #27ae60;
+}
+.woMesoWeekDays{
+  display: flex;
+  gap: 6px;
+  margin-bottom: 14px;
+  overflow-x: auto;
+}
+.woMesoDayCard{
+  flex: 1;
+  min-width: 100px;
+  background: var(--paper);
+  border: 1px solid var(--line2);
+  border-radius: 10px;
+  padding: 10px;
+  cursor: pointer;
+  transition: all 0.15s;
+  position: relative;
+}
+.woMesoDayCard:hover{ border-color: var(--line); }
+.woMesoDayToday{
+  border: 2px solid var(--accent);
+  background: var(--accent-soft, rgba(91,124,245,0.06));
+}
+.woMesoDayDone{
+  background: rgba(39,174,96,0.05);
+  border-color: rgba(39,174,96,0.2);
+}
+.woMesoDayLabel{
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--ink);
+}
+.woMesoDayDate{
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--muted);
+  margin-top: 2px;
+}
+.woMesoDayMuscles{
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--accent);
+  margin-top: 4px;
+}
+.woMesoDayCheck{
+  position: absolute;
+  top: 6px;
+  right: 8px;
+  font-size: 12px;
+  font-weight: 900;
+  color: #27ae60;
+}
+.woMesoTodaySession{
+  background: var(--paper);
+  border: 1px solid var(--line2);
+  border-radius: 12px;
+  padding: 14px;
+}
+.woMesoTodayTitle{
+  font-size: 15px;
+  font-weight: 800;
+  color: var(--ink);
+}
+.woMesoTodayMuscles{
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--accent);
+  margin-top: 2px;
+  margin-bottom: 10px;
+}
+.woMesoExList{
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.woMesoExItem{
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 0;
+  border-bottom: 1px solid var(--line2);
+  font-size: 13px;
+}
+.woMesoExItem:last-child{ border-bottom: none; }
+.woMesoExNum{
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: var(--chip);
+  font-size: 11px;
+  font-weight: 800;
+  color: var(--muted);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+.woMesoExName{
+  font-weight: 700;
+  color: var(--ink);
+  flex: 1;
+}
+.woMesoExTarget{
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--muted);
+  white-space: nowrap;
+}
+.woMesoRestMsg{
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--muted);
+  padding: 16px;
+  text-align: center;
+  background: var(--chip);
+  border-radius: 10px;
+}
+
+/* Meso view toggle */
+.woMesoViewToggle{
+  display: flex;
+  gap: 2px;
+  background: var(--chip);
+  border-radius: 8px;
+  padding: 2px;
+}
+.woMesoViewBtn{
+  padding: 4px 12px;
+  font-size: 11px;
+  font-weight: 700;
+  border: none;
+  border-radius: 6px;
+  background: none;
+  color: var(--muted);
+  cursor: pointer;
+  font-family: inherit;
+  transition: all 0.15s;
+}
+.woMesoViewBtnActive{
+  background: var(--paper);
+  color: var(--ink);
+  box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+}
+
+/* Full program view */
+.woMesoFullProgram{
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  max-height: calc(100vh - 250px);
+  overflow-y: auto;
+  padding-right: 4px;
+}
+.woMesoFullProgram::-webkit-scrollbar{ width: 4px; }
+.woMesoFullProgram::-webkit-scrollbar-thumb{ background: var(--line); border-radius: 4px; }
+.woMesoFullWeek{
+  background: var(--paper);
+  border: 1px solid var(--line2);
+  border-radius: 12px;
+  overflow: hidden;
+}
+.woMesoFullWeekHeader{
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px;
+  background: var(--chip);
+  border-bottom: 1px solid var(--line2);
+}
+.woMesoFullWeekLabel{
+  font-size: 13px;
+  font-weight: 800;
+  color: var(--ink);
+}
+.woMesoFullWeekDays{
+  display: flex;
+  flex-direction: column;
+}
+.woMesoFullDay{
+  border-bottom: 1px solid var(--line2);
+}
+.woMesoFullDay:last-child{ border-bottom: none; }
+.woMesoFullDayHeader{
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 14px;
+  background: rgba(91,124,245,0.03);
+}
+.woMesoFullDayLabel{
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--ink);
+}
+.woMesoFullDayMuscles{
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--accent);
+}
+.woMesoFullTable{
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+.woMesoFullTable th{
+  text-align: left;
+  padding: 5px 8px;
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+  border-bottom: 1px solid var(--line2);
+}
+.woMesoFullTable td{
+  padding: 5px 8px;
+  color: var(--ink);
+  font-weight: 600;
+  border-bottom: 1px solid var(--line2);
+}
+.woMesoFullTable tr:last-child td{ border-bottom: none; }
+.woMesoFullNum{
+  font-weight: 800;
+  color: var(--muted);
+  width: 24px;
+}
+.woMesoFullExName{
+  font-weight: 700;
+  color: var(--ink);
+}
+.woMesoFullEmpty{
+  padding: 12px 14px;
+  font-size: 12px;
+  color: var(--muted);
+  font-style: italic;
+}
+
 /* Program toggle active state */
 .woProgramOnBtn{
   background: var(--accent-soft, rgba(91,124,245,0.08));
