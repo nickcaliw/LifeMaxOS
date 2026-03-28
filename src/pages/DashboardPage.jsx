@@ -571,7 +571,20 @@ export default function DashboardPage({ onNavigate, spiritualPath: spPath }) {
             </div>
           )}
 
-          {/* Insights + Reminders — always shown */}
+          {/* Readiness + Health Recommendations */}
+          {hiReadiness && (
+            <ReadinessCard
+              score={hiReadiness.score}
+              category={hiReadiness.category}
+              explanation={hiReadiness.explanation}
+              components={hiReadiness.components}
+            />
+          )}
+          {hiRecs && hiRecs.length > 0 && (
+            <HealthRecommendations recommendations={hiRecs} />
+          )}
+
+          {/* Insights + Reminders */}
           <div className="dashInsightsStack">
             {insights.length > 0 && (
               <div className="dashInsights">
@@ -586,42 +599,32 @@ export default function DashboardPage({ onNavigate, spiritualPath: spPath }) {
                 ))}
               </div>
             )}
-            {reminders.length > 0 ? (
-              <div className="dashReminders">
-                <div className="dashRemindersHeader">
-                  <div className="dashRemindersTitle">Reminders</div>
-                  <div className="dashRemindersBadge">{reminders.length}</div>
+            {/* Hide reminders when health recommendations are active (they cover the same ground) */}
+            {!(hiRecs && hiRecs.length > 0) && (
+              reminders.length > 0 ? (
+                <div className="dashReminders">
+                  <div className="dashRemindersHeader">
+                    <div className="dashRemindersTitle">Reminders</div>
+                    <div className="dashRemindersBadge">{reminders.length}</div>
+                  </div>
+                  <div className="dashRemindersList">
+                    {reminders.map((r, i) => (
+                      <button key={i} className="dashReminderItem" onClick={() => onNavigate(r.page)} type="button">
+                        <span className="dashReminderIcon">{r.icon}</span>
+                        <span className="dashReminderText">{r.text}</span>
+                        <span className="dashReminderArrow">{"\u203A"}</span>
+                      </button>
+                    ))}
+                  </div>
                 </div>
-                <div className="dashRemindersList">
-                  {reminders.map((r, i) => (
-                    <button key={i} className="dashReminderItem" onClick={() => onNavigate(r.page)} type="button">
-                      <span className="dashReminderIcon">{r.icon}</span>
-                      <span className="dashReminderText">{r.text}</span>
-                      <span className="dashReminderArrow">{"\u203A"}</span>
-                    </button>
-                  ))}
+              ) : (
+                <div className="dashReminders dashRemindersDone">
+                  <div className="dashRemindersDoneIcon">{"\u{1F389}"}</div>
+                  <div className="dashRemindersDoneText">All caught up!</div>
                 </div>
-              </div>
-            ) : (
-              <div className="dashReminders dashRemindersDone">
-                <div className="dashRemindersDoneIcon">{"\u{1F389}"}</div>
-                <div className="dashRemindersDoneText">All caught up!</div>
-              </div>
+              )
             )}
           </div>
-
-          {/* Readiness + Health Recommendations */}
-          {hiReadiness && (
-            <ReadinessCard
-              score={hiReadiness.score}
-              category={hiReadiness.category}
-              explanation={hiReadiness.explanation}
-              components={hiReadiness.components}
-            />
-          )}
-          {hiRecs && hiRecs.length > 0 && (
-            <HealthRecommendations recommendations={hiRecs} />
-          )}
 
           {/* Score Breakdown (toggled from topbar) */}
           {showScoreBreakdown && (

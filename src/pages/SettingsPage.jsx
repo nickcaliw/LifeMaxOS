@@ -11,6 +11,7 @@ const notificationApi = typeof window !== "undefined" ? window.notificationApi :
 const dialogApi = typeof window !== "undefined" ? window.dialogApi : null;
 const plannerApi = typeof window !== "undefined" ? window.plannerApi : null;
 const mfpApi = typeof window !== "undefined" ? window.mfpApi : null;
+const mealsApi = typeof window !== "undefined" ? window.mealsApi : null;
 const healthApi = typeof window !== "undefined" ? window.healthApi : null;
 const sleepApi = typeof window !== "undefined" ? window.sleepApi : null;
 const bodyApi = typeof window !== "undefined" ? window.bodyApi : null;
@@ -180,7 +181,36 @@ export default function SettingsPage({ spiritualPath, onSpiritualPathChange }) {
         saved++;
       }
 
-      showMessage("success", `Imported nutrition data for ${saved} days from MyFitnessPal!`);
+      // Also save each day as a meal entry in the meals table
+      let mealsCreated = 0;
+      if (mealsApi) {
+        const existingMeals = (await mealsApi.list()) ?? [];
+        const existingNames = new Set(existingMeals.map((m) => m.name));
+
+        for (const day of days) {
+          const d = new Date(day.date + "T12:00:00");
+          const label = d.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+          const mealName = `MFP - ${label}`;
+
+          if (existingNames.has(mealName)) continue; // skip duplicates
+
+          const id = `mfp-${day.date}-${Date.now()}`;
+          await mealsApi.save(id, {
+            name: mealName,
+            calories: String(day.calories),
+            protein: String(day.protein),
+            carbs: String(day.carbs),
+            fat: String(day.fat),
+            category: "imported",
+            ingredients: "",
+            notes: `Imported from MyFitnessPal for ${day.date}`,
+          });
+          mealsCreated++;
+        }
+      }
+
+      const mealMsg = mealsCreated > 0 ? ` Created ${mealsCreated} meal entries.` : "";
+      showMessage("success", `Imported nutrition data for ${saved} days from MyFitnessPal!${mealMsg}`);
     } catch (err) {
       showMessage("error", "MFP import failed: " + (err.message || err));
     } finally {

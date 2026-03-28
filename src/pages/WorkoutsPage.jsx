@@ -211,7 +211,7 @@ export default function WorkoutsPage() {
   }, [visibleSchedule, selectedDate]);
 
   const log = logs[selectedDate];
-  const isRestDay = !todaySession && !log?.hevyTitle;
+  const isRestDay = !todaySession && !mesoTodayWorkout && !log?.hevyTitle;
   const isHevyImport = !!log?.hevyTitle;
 
   // Phase info
@@ -248,6 +248,32 @@ export default function WorkoutsPage() {
     };
   }, [todaySession]);
 
+  // Build workout from active mesocycle day (preferred over old template)
+  const mesoTodayWorkout = useMemo(() => {
+    if (!activeMeso || !mesoFull?.weeks?.length) return null;
+    for (const week of mesoFull.weeks) {
+      const day = week.days.find(d => d.date === selectedDate);
+      if (day?.exercises?.length) {
+        return {
+          title: day.label || day.target_muscles || "Workout",
+          subtitle: `Week ${week.week_number || 1}${week.type === 'deload' ? ' (Deload)' : ''}`,
+          exercises: day.exercises.map(ex => ({
+            name: ex.exercise_name,
+            sets: ex.target_sets || 3,
+            reps: ex.target_rep_high ? `${ex.target_rep_low}-${ex.target_rep_high}` : (ex.target_rep_low || "8-12"),
+            rir: ex.target_rir,
+            restSeconds: ex.rest_seconds || 120,
+            exerciseId: ex.id,
+          })),
+        };
+      }
+    }
+    return null;
+  }, [activeMeso, mesoFull, selectedDate]);
+
+  // Effective workout template: prefer mesocycle, fall back to old program
+  const effectiveTemplate = mesoTodayWorkout || template;
+
   // Create empty log structure
   function createEmptyLog(tmpl) {
     if (!tmpl?.exercises?.length) return null;
@@ -260,10 +286,10 @@ export default function WorkoutsPage() {
     };
   }
 
-  const currentLog = log || createEmptyLog(template);
+  const currentLog = log || createEmptyLog(effectiveTemplate);
 
   const updateSet = (exIdx, setIdx, field, value) => {
-    const current = logs[selectedDate] || createEmptyLog(template);
+    const current = logs[selectedDate] || createEmptyLog(effectiveTemplate);
     if (!current) return;
     const next = {
       ...current,
@@ -278,7 +304,7 @@ export default function WorkoutsPage() {
   };
 
   const toggleCompleted = () => {
-    const current = logs[selectedDate] || createEmptyLog(template);
+    const current = logs[selectedDate] || createEmptyLog(effectiveTemplate);
     if (!current) return;
     saveLog(selectedDate, { ...current, completed: !current.completed });
   };
@@ -433,7 +459,7 @@ export default function WorkoutsPage() {
   }, [sleepToday]);
 
   // ─────────── Estimated duration ───────────
-  const estDuration = todaySession?.estimated_duration_min || todaySession?.estimatedDurationMin || (template?.exercises ? Math.round(template.exercises.length * 7.5) : null);
+  const estDuration = todaySession?.estimated_duration_min || todaySession?.estimatedDurationMin || (effectiveTemplate?.exercises ? Math.round(effectiveTemplate.exercises.length * 7.5) : null);
 
   // ─────────── Up next ───────────
   const upNext = useMemo(() => {
@@ -855,7 +881,7 @@ export default function WorkoutsPage() {
                   <div className="woHeaderTitle">Rest & Recovery</div>
                 ) : (
                   <div className="woHeaderTitle">
-                    {isHevyImport ? log.hevyTitle : (template?.title || "Workout")}
+                    {isHevyImport ? log.hevyTitle : (effectiveTemplate?.title || "Workout")}
                   </div>
                 )}
               </div>
@@ -875,18 +901,18 @@ export default function WorkoutsPage() {
             </div>
 
             {/* Session meta */}
-            {template && !isRestDay && !isHevyImport && (
+            {effectiveTemplate && !isRestDay && !isHevyImport && (
               <div className="woSessionMeta">
                 {estDuration && <span>{estDuration} min</span>}
-                <span>{template.exercises.length} exercises</span>
-                <span>{template.exercises.reduce((s, e) => s + (e.sets || 3), 0)} sets</span>
+                <span>{effectiveTemplate.exercises.length} exercises</span>
+                <span>{effectiveTemplate.exercises.reduce((s, e) => s + (e.sets || 3), 0)} sets</span>
                 {todaySession?.rir !== undefined && <span>RIR {todaySession.rir}</span>}
               </div>
             )}
 
             {/* Coaching cue */}
-            {template?.notes && !isHevyImport && (
-              <div className="woCoachingCue">{template.notes}</div>
+            {effectiveTemplate?.notes && !isHevyImport && (
+              <div className="woCoachingCue">{effectiveTemplate.notes}</div>
             )}
 
             {/* Readiness check */}
@@ -953,9 +979,9 @@ export default function WorkoutsPage() {
             )}
 
             {/* ═══ SCHEDULED WORKOUT EXERCISES ═══ */}
-            {template && !isRestDay && !isHevyImport && (
+            {effectiveTemplate && !isRestDay && !isHevyImport && (
               <div className="woExercises">
-                {template.exercises.map((ex, exIdx) => {
+                {effectiveTemplate.exercises.map((ex, exIdx) => {
                   const exLog = currentLog?.exercises?.[exIdx];
                   return (
                     <div className="woExCard" key={exIdx}>
@@ -1060,9 +1086,9 @@ export default function WorkoutsPage() {
       )}
 
       {/* Active Workout Overlay */}
-      {activeWorkoutMode && template && (
+      {activeWorkoutMode && effectiveTemplate && (
         <ActiveWorkout
-          workout={template}
+          workout={effectiveTemplate}
           previousData={null}
           onComplete={(result) => {
             saveLog(selectedDate, result);
