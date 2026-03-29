@@ -1,7 +1,7 @@
 {
-  "name": "daily-planner-desktop",
+  "name": "lifemaxos",
   "private": true,
-  "version": "1.0.0",
+  "version": "7.0.0",
   "type": "module",
   "main": "electron/main.cjs",
   "scripts": {
@@ -38,11 +38,11 @@
     "vite": "^7.2.4"
   },
   "build": {
-    "appId": "com.dailyplanner.app",
+    "appId": "com.lifemaxos.app",
     "productName": "LifeMax OS",
     "mac": {
       "target": [
-        "dir",
+        "dmg",
         "zip"
       ],
       "category": "public.app-category.productivity",
