@@ -65,7 +65,10 @@ const NAV_STATIC = [
       { id: "habits", label: "Habits", icon: <I><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" /><polyline points="22 4 12 14.01 9 11.01" /></I> },
       { id: "routines", label: "Routines", icon: <I><path d="M17 3a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h10z" /><line x1="9" y1="8" x2="15" y2="8" /><line x1="9" y1="12" x2="15" y2="12" /><line x1="9" y1="16" x2="13" y2="16" /></I> },
       { id: "focus", label: "Focus Timer", icon: <I><circle cx="12" cy="12" r="10" /><polyline points="12 6 12 12 16 14" /></I> },
-
+      { id: "pomodorostats", label: "Focus Stats", icon: <I><line x1="18" y1="20" x2="18" y2="10" /><line x1="12" y1="20" x2="12" y2="4" /><line x1="6" y1="20" x2="6" y2="14" /><circle cx="18" cy="7" r="3" /></I> },
+      { id: "timeblocking", label: "Time Blocking", icon: <I><rect x="3" y="3" width="18" height="18" rx="2" /><line x1="3" y1="9" x2="21" y2="9" /><line x1="3" y1="15" x2="21" y2="15" /><line x1="9" y1="3" x2="9" y2="21" /></I> },
+      { id: "weeklyplanner", label: "Weekly Planner", icon: <I><rect x="3" y="4" width="18" height="18" rx="2" /><line x1="3" y1="10" x2="21" y2="10" /><line x1="7" y1="4" x2="7" y2="22" /><line x1="11" y1="4" x2="11" y2="22" /><line x1="15" y1="4" x2="15" y2="22" /></I> },
+      { id: "habitstreaks", label: "Habit Streaks", icon: <I><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" /><polyline points="22 4 12 14.01 9 11.01" /><path d="M17 2l2 2-2 2" /></I> },
       { id: "report", label: "Report", icon: <I><line x1="18" y1="20" x2="18" y2="10" /><line x1="12" y1="20" x2="12" y2="4" /><line x1="6" y1="20" x2="6" y2="14" /></I> },
     ],
   },
@@ -83,6 +86,8 @@ const NAV_STATIC = [
       { id: "bodystats", label: "Body Stats", icon: <I><path d="M22 12h-4l-3 9L9 3l-3 9H2" /></I> },
       { id: "mood", label: "Mood Tracker", icon: <I><circle cx="12" cy="12" r="10" /><path d="M8 14s1.5 2 4 2 4-2 4-2" /><line x1="9" y1="9" x2="9.01" y2="9" /><line x1="15" y1="9" x2="15.01" y2="9" /></I> },
       { id: "fasting", label: "Fasting", icon: <I><circle cx="12" cy="12" r="10" /><path d="M12 6v6l4 2" /><path d="M4.93 4.93l14.14 14.14" /></I> },
+      { id: "stretching", label: "Stretching", icon: <I><path d="M12 2v8" /><path d="M4.93 10.93l4.24-4.24" /><path d="M19.07 10.93l-4.24-4.24" /><path d="M12 10v12" /><path d="M8 18l4 4 4-4" /></I> },
+      { id: "symptoms", label: "Symptoms", icon: <I><path d="M22 12h-4l-3 9L9 3l-3 9H2" /><circle cx="12" cy="12" r="1" /></I> },
     ],
   },
 
@@ -97,6 +102,9 @@ const NAV_STATIC = [
       { id: "sidehustles", label: "Side Hustles", icon: <I><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z" /></I> },
       { id: "projects", label: "Projects", icon: <I><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" /></I> },
       { id: "subscriptions", label: "Subscriptions", icon: <I><path d="M21 12a9 9 0 1 1-9-9" /><path d="M21 3v6h-6" /><path d="M21 3l-9 9" /></I> },
+      { id: "savingsgoals", label: "Savings Goals", icon: <I><path d="M19 5c-1.5 0-2.8 1.4-3 2-3.5-1.5-11-.3-11 5 0 1.8 0 3 2 4.5V20h4v-2h3v2h4v-4c1-.5 1.7-1 2-2h2v-4h-2c0-1-.5-1.5-1-2" /><line x1="2" y1="9" x2="5" y2="9" /></I> },
+      { id: "debtpayoff", label: "Debt Payoff", icon: <I><line x1="12" y1="1" x2="12" y2="23" /><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6" /><path d="M3 17l3-3 3 3" /></I> },
+      { id: "investments", label: "Investments", icon: <I><polyline points="22 7 13.5 15.5 8.5 10.5 2 17" /><polyline points="16 7 22 7 22 13" /></I> },
     ],
   },
 
@@ -109,6 +117,8 @@ const NAV_STATIC = [
       { id: "relationships", label: "Relationships", icon: <I><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z" /></I> },
       { id: "dateideas", label: "Date Ideas", icon: <I><path d="M17.5 6.5L12 12l-5.5-5.5" /><path d="M12 12v9" /><circle cx="12" cy="5" r="3" /></I> },
       { id: "giftideas", label: "Gift Ideas", icon: <I><polyline points="20 12 20 22 4 22 4 12" /><rect x="2" y="7" width="20" height="5" /><line x1="12" y1="22" x2="12" y2="7" /><path d="M12 7H7.5a2.5 2.5 0 0 1 0-5C11 2 12 7 12 7z" /><path d="M12 7h4.5a2.5 2.5 0 0 0 0-5C13 2 12 7 12 7z" /></I> },
+      { id: "contactreminders", label: "Contact Reminders", icon: <I><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.127.96.361 1.903.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91" /><circle cx="18" cy="5" r="3" /></I> },
+      { id: "socialevents", label: "Social Events", icon: <I><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><path d="M20 8v6" /><path d="M23 11h-6" /></I> },
     ],
   },
 
@@ -129,6 +139,8 @@ const NAV_STATIC = [
       { id: "bucketlist", label: "Bucket List", icon: <I><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" /><circle cx="12" cy="12" r="3" /></I> },
       { id: "skills", label: "Skills", icon: <I><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" /><circle cx="12" cy="12" r="3" /></I> },
       { id: "challenges", label: "Challenges", icon: <I><path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z" /><line x1="4" y1="22" x2="4" y2="15" /></I> },
+      { id: "booknotes", label: "Book Notes", icon: <I><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20" /><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z" /><path d="M8 7h8" /><path d="M8 11h5" /><path d="M8 15h3" /></I> },
+      { id: "quotes", label: "Quotes", icon: <I><path d="M3 21c3 0 7-1 7-8V5c0-1.25-.756-2.017-2-2H4c-1.25 0-2 .75-2 1.972V11c0 1.25.75 2 2 2 1 0 1 0 1 1v1c0 1-1 2-2 2s-1 .008-1 1.031V21z" /><path d="M15 21c3 0 7-1 7-8V5c0-1.25-.757-2.017-2-2h-4c-1.25 0-2 .75-2 1.972V11c0 1.25.75 2 2 2h.75c0 2.25.25 4-2.75 4v3z" /></I> },
     ],
   },
 
@@ -239,7 +251,7 @@ export default function Sidebar({ activePage, onNavigate, spiritualPath }) {
   return (
     <div className="sidebar">
       <div className="sidebarHeader">
-        <div className="sidebarBrand">Apex OS</div>
+        <div className="sidebarBrand">LifeMax OS</div>
       </div>
 
       <nav className="sidebarNav">

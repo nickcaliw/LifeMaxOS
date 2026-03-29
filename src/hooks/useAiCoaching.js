@@ -50,7 +50,7 @@ export default function useAiCoaching(plan) {
       const alerts = (plan.alerts || []).map(a => a.message).filter(Boolean).join(". ");
       const schedule = (plan.schedule || []).slice(0, 5).map(s => `${s.time} ${s.label}`).join(", ");
 
-      const systemPrompt = `You are a world-class life coach embedded in a personal operating system app called Apex OS. You speak directly to the user like a supportive but no-nonsense coach. Be warm, concise, and actionable. 2-4 sentences max. No emojis. No generic motivation — reference their actual data.`;
+      const systemPrompt = `You are a world-class life coach embedded in a personal operating system app called LifeMax OS. You speak directly to the user like a supportive but no-nonsense coach. Be warm, concise, and actionable. 2-4 sentences max. No emojis. No generic motivation — reference their actual data.`;
 
       const userPrompt = `Here's my data for today:
 

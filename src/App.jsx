@@ -56,6 +56,19 @@ import DateIdeasPage from "./pages/DateIdeasPage.jsx";
 import GiftIdeasPage from "./pages/GiftIdeasPage.jsx";
 import CleaningSchedulePage from "./pages/CleaningSchedulePage.jsx";
 import SubscriptionsPage from "./pages/SubscriptionsPage.jsx";
+import PomodoroStatsPage from "./pages/PomodoroStatsPage.jsx";
+import TimeBlockingPage from "./pages/TimeBlockingPage.jsx";
+import WeeklyPlannerPage from "./pages/WeeklyPlannerPage.jsx";
+import StretchingPage from "./pages/StretchingPage.jsx";
+import SymptomsTrackerPage from "./pages/SymptomsTrackerPage.jsx";
+import SavingsGoalsPage from "./pages/SavingsGoalsPage.jsx";
+import DebtPayoffPage from "./pages/DebtPayoffPage.jsx";
+import InvestmentPortfolioPage from "./pages/InvestmentPortfolioPage.jsx";
+import BookNotesPage from "./pages/BookNotesPage.jsx";
+import QuotesPage from "./pages/QuotesPage.jsx";
+import HabitStreaksPage from "./pages/HabitStreaksPage.jsx";
+import ContactRemindersPage from "./pages/ContactRemindersPage.jsx";
+import SocialEventsPage from "./pages/SocialEventsPage.jsx";
 import GlobalSearch from "./components/GlobalSearch.jsx";
 import ErrorBoundary from "./components/ErrorBoundary.jsx";
 import Onboarding from "./components/Onboarding.jsx";
@@ -979,6 +992,32 @@ export default function App() {
           <CleaningSchedulePage />
         ) : activePage === "subscriptions" ? (
           <SubscriptionsPage />
+        ) : activePage === "pomodorostats" ? (
+          <PomodoroStatsPage />
+        ) : activePage === "timeblocking" ? (
+          <TimeBlockingPage />
+        ) : activePage === "weeklyplanner" ? (
+          <WeeklyPlannerPage />
+        ) : activePage === "stretching" ? (
+          <StretchingPage />
+        ) : activePage === "symptoms" ? (
+          <SymptomsTrackerPage />
+        ) : activePage === "savingsgoals" ? (
+          <SavingsGoalsPage />
+        ) : activePage === "debtpayoff" ? (
+          <DebtPayoffPage />
+        ) : activePage === "investments" ? (
+          <InvestmentPortfolioPage />
+        ) : activePage === "booknotes" ? (
+          <BookNotesPage />
+        ) : activePage === "quotes" ? (
+          <QuotesPage />
+        ) : activePage === "habitstreaks" ? (
+          <HabitStreaksPage />
+        ) : activePage === "contactreminders" ? (
+          <ContactRemindersPage />
+        ) : activePage === "socialevents" ? (
+          <SocialEventsPage />
         ) : activePage === "settings" ? (
           <SettingsPage spiritualPath={spiritualPath} onSpiritualPathChange={setSpiritualPath} />
         ) : null}

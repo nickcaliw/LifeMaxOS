@@ -211,7 +211,6 @@ export default function WorkoutsPage() {
   }, [visibleSchedule, selectedDate]);
 
   const log = logs[selectedDate];
-  const isRestDay = !todaySession && !mesoTodayWorkout && !log?.hevyTitle;
   const isHevyImport = !!log?.hevyTitle;
 
   // Phase info
@@ -273,6 +272,7 @@ export default function WorkoutsPage() {
 
   // Effective workout template: prefer mesocycle, fall back to old program
   const effectiveTemplate = mesoTodayWorkout || template;
+  const isRestDay = !todaySession && !mesoTodayWorkout && !isHevyImport;
 
   // Create empty log structure
   function createEmptyLog(tmpl) {

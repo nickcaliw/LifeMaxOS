@@ -645,19 +645,24 @@ export default function DashboardPage({ onNavigate, spiritualPath: spPath }) {
           )}
 
           {/* Quick Stats Row — compact health data */}
+          {/* When readiness card is shown, hide sleep & habits (already covered by readiness) */}
           <div className="dashQuickStats">
-            <button className="dashQStat" onClick={() => onNavigate("sleep")} type="button">
-              <span className="dashQStatLabel">Sleep</span>
-              <span className="dashQStatVal">{sleepHours !== null ? `${sleepHours.toFixed(1)}h` : "\u2014"}</span>
-            </button>
+            {!hiReadiness && (
+              <button className="dashQStat" onClick={() => onNavigate("sleep")} type="button">
+                <span className="dashQStatLabel">Sleep</span>
+                <span className="dashQStatVal">{sleepHours !== null ? `${sleepHours.toFixed(1)}h` : "\u2014"}</span>
+              </button>
+            )}
             <button className="dashQStat" onClick={() => onNavigate("water")} type="button">
               <span className="dashQStatLabel">Water</span>
               <span className="dashQStatVal">{waterGlasses}/{waterGoal}</span>
             </button>
-            <button className="dashQStat" onClick={() => onNavigate("habits")} type="button">
-              <span className="dashQStatLabel">Habits</span>
-              <span className="dashQStatVal">{habitsPct}%</span>
-            </button>
+            {!hiReadiness && (
+              <button className="dashQStat" onClick={() => onNavigate("habits")} type="button">
+                <span className="dashQStatLabel">Habits</span>
+                <span className="dashQStatVal">{habitsPct}%</span>
+              </button>
+            )}
             {todaySteps && (
               <div className="dashQStat">
                 <span className="dashQStatLabel">Steps</span>

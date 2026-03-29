@@ -39,7 +39,7 @@
   },
   "build": {
     "appId": "com.dailyplanner.app",
-    "productName": "Apex OS",
+    "productName": "LifeMax OS",
     "mac": {
       "target": [
         "dir",

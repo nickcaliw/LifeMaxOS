@@ -5,7 +5,7 @@ const db = require("./db.cjs");
 
 const isDev = !app.isPackaged;
 
-app.setName("Apex OS");
+app.setName("LifeMax OS");
 
 function createWindow() {
   const win = new BrowserWindow({

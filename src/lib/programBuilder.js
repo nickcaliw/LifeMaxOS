@@ -1,5 +1,5 @@
 /**
- * Apex OS — Workout Program Engine v2
+ * LifeMax OS — Workout Program Engine v2
  *
  * Generates structured, periodised training programs based on user profile,
  * schedules them onto a calendar, and provides progression targets.

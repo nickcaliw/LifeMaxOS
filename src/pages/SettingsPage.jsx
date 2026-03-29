@@ -16,7 +16,7 @@ const healthApi = typeof window !== "undefined" ? window.healthApi : null;
 const sleepApi = typeof window !== "undefined" ? window.sleepApi : null;
 const bodyApi = typeof window !== "undefined" ? window.bodyApi : null;
 
-const APP_NAME = "Apex OS";
+const APP_NAME = "LifeMax OS";
 const APP_VERSION = "1.0.0";
 
 export default function SettingsPage({ spiritualPath, onSpiritualPathChange }) {

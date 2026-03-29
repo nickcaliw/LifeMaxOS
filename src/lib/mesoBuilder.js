@@ -1,5 +1,5 @@
 /**
- * Apex OS — Mesocycle Builder Engine
+ * LifeMax OS — Mesocycle Builder Engine
  *
  * Generates structured mesocycle training blocks with week-specific volume,
  * intensity (RIR), and exercise prescriptions based on evidence-based

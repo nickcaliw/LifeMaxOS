@@ -122,7 +122,7 @@ export default function Onboarding({ onComplete }) {
             <div className="obLogoArea">
               <div className="obLogo">A</div>
             </div>
-            <h1 className="obTitle">Welcome to Apex OS</h1>
+            <h1 className="obTitle">Welcome to LifeMax OS</h1>
             <p className="obDesc">
               The all-in-one operating system for your life.
             </p>
@@ -248,7 +248,7 @@ export default function Onboarding({ onComplete }) {
           <div className="obStep">
             <div className="obStepNum">4 of 4</div>
             <h1 className="obTitle">Here's what you can do</h1>
-            <p className="obDesc">A quick look at what Apex OS offers.</p>
+            <p className="obDesc">A quick look at what LifeMax OS offers.</p>
             <div className="obTourCarousel">
               <div className="obTourCard">
                 <div className="obTourEmoji">{TOUR_FEATURES[tourIdx].emoji}</div>
@@ -292,7 +292,7 @@ export default function Onboarding({ onComplete }) {
             <div className="obReadyEmoji">🚀</div>
             <h1 className="obTitle">You're all set{name.trim() ? `, ${name.trim()}` : ""}!</h1>
             <p className="obDesc">
-              Your personalized Apex OS is ready. Start by filling in today's planner on your dashboard.
+              Your personalized LifeMax OS is ready. Start by filling in today's planner on your dashboard.
             </p>
             <div className="obTips">
               <div className="obTip">
@@ -309,7 +309,7 @@ export default function Onboarding({ onComplete }) {
               </div>
             </div>
             <button className="btn btnPrimary obBtn obBtnLarge" onClick={finish} type="button">
-              Launch Apex OS
+              Launch LifeMax OS
             </button>
           </div>
         )}
