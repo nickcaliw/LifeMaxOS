@@ -4,6 +4,8 @@ import AutoGrowTextarea from "../components/AutoGrowTextarea.jsx";
 
 const api = typeof window !== "undefined" ? window.journalApi : null;
 const settingsApi = typeof window !== "undefined" ? window.settingsApi : null;
+const aiApi = typeof window !== "undefined" ? window.aiApi : null;
+const plannerApi = typeof window !== "undefined" ? window.plannerApi : null;
 
 const MOODS = [
   { value: "great", label: "Great", emoji: "😄", color: "#27ae60", level: 5 },
@@ -36,6 +38,13 @@ export default function JournalPage() {
   const [loading, setLoading] = useState(true);
   const saveTimer = useRef(null);
   const moodSaveTimer = useRef(null);
+
+  // AI prompt state
+  const [hasApiKey, setHasApiKey] = useState(false);
+  const [aiPrompts, setAiPrompts] = useState(null); // { date, prompts: string[] }
+  const [aiLoading, setAiLoading] = useState(false);
+  const [aiOpen, setAiOpen] = useState(false);
+  const aiPopoverRef = useRef(null);
 
   // Weekly mood data
   const [weekMoods, setWeekMoods] = useState({});
@@ -109,6 +118,130 @@ export default function JournalPage() {
     loadWeek();
   }, [today, selectedDate]);
 
+  // Check for AI API key
+  useEffect(() => {
+    if (!settingsApi) return;
+    settingsApi.get("ai_api_key").then(key => setHasApiKey(!!key)).catch(() => setHasApiKey(false));
+  }, []);
+
+  // Close AI popover on outside click
+  useEffect(() => {
+    if (!aiOpen) return;
+    const handler = (e) => {
+      if (aiPopoverRef.current && !aiPopoverRef.current.contains(e.target)) {
+        setAiOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [aiOpen]);
+
+  // Generate AI journal prompts
+  const generateAiPrompts = useCallback(async () => {
+    if (!aiApi || !settingsApi || !selectedDate) return;
+
+    // Check cache first
+    if (aiPrompts && aiPrompts.date === selectedDate) {
+      setAiOpen(true);
+      return;
+    }
+
+    // Also check settingsApi cache
+    try {
+      const cacheKey = `ai_journal_prompts_${selectedDate}`;
+      const cached = await settingsApi.get(cacheKey);
+      if (cached) {
+        const parsed = JSON.parse(cached);
+        setAiPrompts({ date: selectedDate, prompts: parsed });
+        setAiOpen(true);
+        return;
+      }
+    } catch {}
+
+    const [apiKey, provider] = await Promise.all([
+      settingsApi.get("ai_api_key").catch(() => null),
+      settingsApi.get("ai_provider").catch(() => "openai"),
+    ]);
+    if (!apiKey) return;
+
+    setAiLoading(true);
+    setAiOpen(true);
+
+    try {
+      // Gather context
+      const [plannerData, recentEntries] = await Promise.all([
+        plannerApi ? plannerApi.getDay(selectedDate).catch(() => null) : null,
+        api ? api.list().catch(() => []) : [],
+      ]);
+
+      const recentFive = (recentEntries || []).slice(0, 5);
+      const recentSummary = recentFive
+        .map(e => `${e.date}: ${e.mood ? `mood=${e.mood}` : ""} ${e.preview || ""}`.trim())
+        .join("\n");
+
+      const currentMoodStr = mood ? MOODS.find(m => m.value === mood)?.label || mood : "not set";
+      const currentEnergyStr = energy ? ENERGY_LEVELS.find(e => e.level === energy)?.label || "" : "not set";
+      const currentTagsStr = tags.length > 0 ? tags.join(", ") : "none";
+
+      let plannerContext = "";
+      if (plannerData) {
+        const tasks = plannerData.tasks ? JSON.parse(plannerData.tasks) : [];
+        const topTasks = tasks.slice(0, 5).map(t => t.text || t.title || t).join(", ");
+        if (topTasks) plannerContext = `\nToday's planner tasks: ${topTasks}`;
+      }
+
+      const systemPrompt = `You are a thoughtful journaling coach inside a personal life OS app. Based on the user's current context, generate exactly 3 personalized journal prompts. Each prompt should be a question or writing invitation that encourages meaningful self-reflection. Reference their actual data — mood, tasks, recent entries — not generic prompts. Keep each prompt to 1-2 sentences. Return ONLY a JSON array of 3 strings, no other text.`;
+
+      const userPrompt = `Today's date: ${selectedDate}
+Current mood: ${currentMoodStr}
+Energy level: ${currentEnergyStr}
+Mood influences: ${currentTagsStr}${plannerContext}
+Current journal content so far: ${content ? content.slice(0, 300) : "(empty)"}
+
+Recent journal entries:
+${recentSummary || "(no recent entries)"}
+
+Generate 3 personalized journal prompts based on this context.`;
+
+      const result = await aiApi.chat(
+        [
+          { role: "system", content: systemPrompt },
+          { role: "user", content: userPrompt },
+        ],
+        { provider: provider || "openai", apiKey, maxTokens: 300, temperature: 0.8 }
+      );
+
+      if (result?.error) {
+        console.error("AI prompt error:", result.error);
+        setAiPrompts({ date: selectedDate, prompts: ["What was the highlight of your day?", "What are you grateful for right now?", "What's one thing you'd like to improve tomorrow?"] });
+      } else {
+        let prompts;
+        try {
+          // Try to parse JSON from the response
+          const raw = result.content.trim();
+          const jsonMatch = raw.match(/\[[\s\S]*\]/);
+          prompts = jsonMatch ? JSON.parse(jsonMatch[0]) : [raw];
+        } catch {
+          // Fallback: split by newlines
+          prompts = result.content.split("\n").filter(l => l.trim()).slice(0, 3).map(l => l.replace(/^\d+[\.\)]\s*/, "").replace(/^["']|["']$/g, ""));
+        }
+        if (!Array.isArray(prompts) || prompts.length === 0) {
+          prompts = ["What was the highlight of your day?", "What are you grateful for right now?", "What's one thing you'd like to improve tomorrow?"];
+        }
+        setAiPrompts({ date: selectedDate, prompts: prompts.slice(0, 3) });
+        // Cache
+        try {
+          await settingsApi.set(`ai_journal_prompts_${selectedDate}`, JSON.stringify(prompts.slice(0, 3)));
+        } catch {}
+      }
+    } catch (err) {
+      console.error("AI prompt generation failed:", err);
+      setAiPrompts({ date: selectedDate, prompts: ["What was the highlight of your day?", "What are you grateful for right now?", "What's one thing you'd like to improve tomorrow?"] });
+    } finally {
+      setAiLoading(false);
+    }
+  }, [selectedDate, aiPrompts, mood, energy, tags, content]);
+
   // Save journal content
   const save = useCallback((newContent, newMood) => {
     if (saveTimer.current) clearTimeout(saveTimer.current);
@@ -119,6 +252,15 @@ export default function JournalPage() {
       }
     }, 400);
   }, [selectedDate, refreshList]);
+
+  // Insert a prompt into the journal
+  const insertPrompt = useCallback((prompt) => {
+    const prefix = content ? content.trimEnd() + "\n\n" : "";
+    const newContent = prefix + prompt + "\n";
+    setContent(newContent);
+    save(newContent, mood);
+    setAiOpen(false);
+  }, [content, mood, save]);
 
   // Save mood extras (energy, tags)
   const saveMoodExtras = useCallback((newEnergy, newTags, newMoodLevel) => {
@@ -241,6 +383,49 @@ export default function JournalPage() {
                     weekday: "long", month: "long", day: "numeric", year: "numeric",
                   })}
                 </div>
+                {hasApiKey && (
+                  <div className="jnlAiWrapper" ref={aiPopoverRef}>
+                    <button
+                      className="jnlAiBtn"
+                      onClick={generateAiPrompts}
+                      disabled={aiLoading}
+                      type="button"
+                      title="Get AI journal prompts"
+                    >
+                      {aiLoading ? (
+                        <span className="jnlAiSpinner" />
+                      ) : (
+                        <svg width="16" height="16" viewBox="0 0 16 16" fill="none" style={{ marginRight: 5 }}>
+                          <path d="M8 1v2M8 13v2M1 8h2M13 8h2M3.05 3.05l1.41 1.41M11.54 11.54l1.41 1.41M3.05 12.95l1.41-1.41M11.54 4.46l1.41-1.41" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
+                          <circle cx="8" cy="8" r="3" stroke="currentColor" strokeWidth="1.5"/>
+                        </svg>
+                      )}
+                      AI Prompts
+                    </button>
+                    {aiOpen && (
+                      <div className="jnlAiPopover">
+                        {aiLoading ? (
+                          <div className="jnlAiLoadingMsg">Generating personalized prompts...</div>
+                        ) : aiPrompts?.prompts ? (
+                          <>
+                            <div className="jnlAiPopoverTitle">Journal Prompts</div>
+                            {aiPrompts.prompts.map((prompt, i) => (
+                              <button
+                                key={i}
+                                className="jnlAiPromptBtn"
+                                onClick={() => insertPrompt(prompt)}
+                                type="button"
+                              >
+                                <span className="jnlAiPromptNum">{i + 1}</span>
+                                <span className="jnlAiPromptText">{prompt}</span>
+                              </button>
+                            ))}
+                          </>
+                        ) : null}
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
 
               {/* Mood + Energy row */}
@@ -368,6 +553,67 @@ export default function JournalPage() {
         .jnlTag:hover { border-color: var(--accent); color: var(--ink); }
         .jnlTagActive {
           background: var(--accent); color: #fff; border-color: var(--accent);
+        }
+
+        .jnlEditorHeader {
+          display: flex; align-items: center; justify-content: space-between;
+        }
+        .jnlAiWrapper { position: relative; }
+        .jnlAiBtn {
+          display: inline-flex; align-items: center; padding: 6px 14px;
+          border: 1.5px solid var(--accent); border-radius: 8px;
+          background: var(--accent-soft, rgba(91,124,245,0.08)); color: var(--accent);
+          font-size: 12px; font-weight: 700; font-family: var(--font);
+          cursor: pointer; transition: all 0.15s; white-space: nowrap;
+        }
+        .jnlAiBtn:hover { background: var(--accent); color: #fff; }
+        .jnlAiBtn:disabled { opacity: 0.6; cursor: wait; }
+        .jnlAiSpinner {
+          display: inline-block; width: 14px; height: 14px; margin-right: 5px;
+          border: 2px solid var(--accent); border-top-color: transparent;
+          border-radius: 50%; animation: jnlSpin 0.7s linear infinite;
+        }
+        @keyframes jnlSpin { to { transform: rotate(360deg); } }
+
+        .jnlAiPopover {
+          position: absolute; top: calc(100% + 8px); right: 0;
+          width: 340px; background: var(--paper, #fbf7f0);
+          border: 1px solid var(--line2); border-radius: 12px;
+          box-shadow: 0 8px 32px rgba(0,0,0,0.12), 0 2px 8px rgba(0,0,0,0.06);
+          padding: 14px; z-index: 100;
+          animation: jnlAiFadeIn 0.15s ease-out;
+        }
+        @keyframes jnlAiFadeIn {
+          from { opacity: 0; transform: translateY(-4px); }
+          to { opacity: 1; transform: translateY(0); }
+        }
+        .jnlAiPopoverTitle {
+          font-size: 11px; font-weight: 700; text-transform: uppercase;
+          letter-spacing: 0.04em; color: var(--muted); margin-bottom: 10px;
+        }
+        .jnlAiLoadingMsg {
+          font-size: 13px; color: var(--muted); text-align: center;
+          padding: 20px 0;
+        }
+        .jnlAiPromptBtn {
+          display: flex; align-items: flex-start; gap: 10px;
+          width: 100%; padding: 10px; margin-bottom: 6px;
+          border: 1.5px solid var(--line2); border-radius: 8px;
+          background: none; cursor: pointer; text-align: left;
+          font-family: var(--font); transition: all 0.15s;
+        }
+        .jnlAiPromptBtn:last-child { margin-bottom: 0; }
+        .jnlAiPromptBtn:hover {
+          border-color: var(--accent); background: var(--accent-soft, rgba(91,124,245,0.05));
+        }
+        .jnlAiPromptNum {
+          flex-shrink: 0; width: 22px; height: 22px; display: flex;
+          align-items: center; justify-content: center;
+          background: var(--accent); color: #fff; border-radius: 50%;
+          font-size: 11px; font-weight: 700;
+        }
+        .jnlAiPromptText {
+          font-size: 13px; line-height: 1.45; color: var(--ink);
         }
       `}</style>
     </div>

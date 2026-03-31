@@ -54,6 +54,10 @@ const NAV_STATIC = [
     id: "dashboard", label: "Dashboard",
     icon: <I><rect x="3" y="3" width="7" height="7" rx="1" /><rect x="14" y="3" width="7" height="7" rx="1" /><rect x="3" y="14" width="7" height="7" rx="1" /><rect x="14" y="14" width="7" height="7" rx="1" /></I>,
   },
+  {
+    id: "aichat", label: "LifeMax Coach",
+    icon: <I><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" /><path d="M8 10h.01" /><path d="M12 10h.01" /><path d="M16 10h.01" /></I>,
+  },
 
   /* ── Planner ── */
   {
@@ -77,6 +81,7 @@ const NAV_STATIC = [
   {
     section: "Health & Wellness", collapsible: true, defaultOpen: false,
     items: [
+      { id: "healthdashboard", label: "Health Dashboard", icon: <I><path d="M22 12h-4l-3 9L9 3l-3 9H2" /><circle cx="12" cy="12" r="2" /></I> },
       { id: "workouts", label: "Workouts", icon: <I><path d="M6.5 6.5h11" /><path d="M6.5 17.5h11" /><path d="M4 6.5a2.5 2.5 0 0 1 0 5h0a2.5 2.5 0 0 1 0-5" /><path d="M20 6.5a2.5 2.5 0 0 0 0 5h0a2.5 2.5 0 0 0 0-5" /><path d="M4 12.5a2.5 2.5 0 0 1 0 5h0a2.5 2.5 0 0 1 0-5" /><path d="M20 12.5a2.5 2.5 0 0 0 0 5h0a2.5 2.5 0 0 0 0-5" /><line x1="12" y1="2" x2="12" y2="6.5" /><line x1="12" y1="17.5" x2="12" y2="22" /></I> },
       { id: "meals", label: "Meals", icon: <I><path d="M18 8h1a4 4 0 0 1 0 8h-1" /><path d="M2 8h16v9a4 4 0 0 1-4 4H6a4 4 0 0 1-4-4V8z" /><line x1="6" y1="1" x2="6" y2="4" /><line x1="10" y1="1" x2="10" y2="4" /><line x1="14" y1="1" x2="14" y2="4" /></I> },
       { id: "macros", label: "Macros", icon: <I><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" /><line x1="9" y1="10" x2="15" y2="10" /><line x1="12" y1="7" x2="12" y2="13" /></I> },

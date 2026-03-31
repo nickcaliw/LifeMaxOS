@@ -4,6 +4,7 @@ import { ymd, addDays, startOfWeekMonday, formatRange, isoWeekYear } from "./lib
 import { defaultHabits, progressFor, currentStreakEndingOn, bestStreakForHabit } from "./lib/habits.js";
 import { useWeekData } from "./hooks/useDb.js";
 import { useHabits } from "./hooks/useHabits.js";
+import useFocusTimer from "./hooks/useFocusTimer.js";
 import AutoGrowTextarea from "./components/AutoGrowTextarea.jsx";
 import Sidebar from "./components/Sidebar.jsx";
 import StarRating from "./components/StarRating.jsx";
@@ -69,6 +70,8 @@ import QuotesPage from "./pages/QuotesPage.jsx";
 import HabitStreaksPage from "./pages/HabitStreaksPage.jsx";
 import ContactRemindersPage from "./pages/ContactRemindersPage.jsx";
 import SocialEventsPage from "./pages/SocialEventsPage.jsx";
+import AiChatPage from "./pages/AiChatPage.jsx";
+import HealthDashboardPage from "./pages/HealthDashboardPage.jsx";
 import GlobalSearch from "./components/GlobalSearch.jsx";
 import ErrorBoundary from "./components/ErrorBoundary.jsx";
 import Onboarding from "./components/Onboarding.jsx";
@@ -92,6 +95,7 @@ function PlaceholderPage({ title }) {
 
 export default function App() {
   const { habits: HABITS_LIST } = useHabits();
+  const focusTimer = useFocusTimer();
   const [activePage, setActivePage] = useState("dashboard");
   const [weekStart, setWeekStart] = useState(() => startOfWeekMonday(new Date()));
   const [plannerView, setPlannerView] = useState("3day"); // "3day" or "week"
@@ -301,7 +305,7 @@ export default function App() {
 
         <ErrorBoundary key={activePage}>
         {activePage === "dashboard" ? (
-          <DashboardPage onNavigate={setActivePage} spiritualPath={spiritualPath} />
+          <DashboardPage onNavigate={setActivePage} spiritualPath={spiritualPath} focusTimer={focusTimer} />
         ) : activePage === "planner" ? (
           <>
             {/* Top bar */}
@@ -895,7 +899,7 @@ export default function App() {
         ) : activePage === "finances" ? (
           <FinancesPage />
         ) : activePage === "focus" ? (
-          <FocusTimerPage />
+          <FocusTimerPage focusTimer={focusTimer} />
         ) : activePage === "sleep" ? (
           <SleepTrackerPage />
         ) : activePage === "vision" ? (
@@ -1018,6 +1022,10 @@ export default function App() {
           <ContactRemindersPage />
         ) : activePage === "socialevents" ? (
           <SocialEventsPage />
+        ) : activePage === "aichat" ? (
+          <AiChatPage />
+        ) : activePage === "healthdashboard" ? (
+          <HealthDashboardPage />
         ) : activePage === "settings" ? (
           <SettingsPage spiritualPath={spiritualPath} onSpiritualPathChange={setSpiritualPath} />
         ) : null}

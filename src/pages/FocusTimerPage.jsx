@@ -1,6 +1,5 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { ymd, startOfWeekMonday, addDays } from "../lib/dates.js";
-import { playBell } from "../lib/sounds.js";
 
 const focusApi = typeof window !== "undefined" ? window.focusApi : null;
 
@@ -19,19 +18,21 @@ function formatTime(totalSeconds) {
   return `${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
 }
 
-export default function FocusTimerPage() {
+export default function FocusTimerPage({ focusTimer }) {
   const today = useMemo(() => new Date(), []);
   const todayStr = useMemo(() => ymd(today), [today]);
 
-  const [mode, setMode] = useState("work");
-  const [customDuration, setCustomDuration] = useState("");
-  const [timeLeft, setTimeLeft] = useState(MODES.work.duration);
-  const [running, setRunning] = useState(false);
-  const [taskLabel, setTaskLabel] = useState("");
-  const intervalRef = useRef(null);
-  const startTimeRef = useRef(null);
+  // Use shared timer from App.jsx
+  const mode = focusTimer.mode;
+  const customDuration = focusTimer.customDuration;
+  const setCustomDuration = focusTimer.setCustomDuration;
+  const timeLeft = focusTimer.timeLeft;
+  const running = focusTimer.running;
+  const taskLabel = focusTimer.task;
+  const setTaskLabel = focusTimer.setTask;
 
-  const [sessions, setSessions] = useState([]);
+  const sessions = focusTimer.sessions;
+  const modeDuration = focusTimer.modeDuration;
   const [weekSessions, setWeekSessions] = useState([]);
   const [allRangeData, setAllRangeData] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -40,17 +41,6 @@ export default function FocusTimerPage() {
   const [chartView, setChartView] = useState("week");
   const [weekOffset, setWeekOffset] = useState(0);
   const [monthDate, setMonthDate] = useState(new Date(today.getFullYear(), today.getMonth(), 1));
-
-  const modeDuration = useMemo(() => {
-    if (customDuration && Number(customDuration) > 0) return Number(customDuration) * 60;
-    return MODES[mode].duration;
-  }, [mode, customDuration]);
-
-  const loadTodaySessions = useCallback(async () => {
-    if (!focusApi) return;
-    const data = await focusApi.getByDate(todayStr);
-    setSessions(data || []);
-  }, [todayStr]);
 
   const loadWeekSessions = useCallback(async () => {
     if (!focusApi) return;
@@ -73,78 +63,22 @@ export default function FocusTimerPage() {
 
   useEffect(() => {
     setLoading(true);
-    Promise.all([loadTodaySessions(), loadWeekSessions(), loadRangeData()]).finally(() => setLoading(false));
-  }, [loadTodaySessions, loadWeekSessions, loadRangeData]);
+    Promise.all([loadWeekSessions(), loadRangeData()]).finally(() => setLoading(false));
+  }, [loadWeekSessions, loadRangeData]);
 
+  // Reload week/range data when sessions change (e.g. after timer completes)
   useEffect(() => {
-    if (!running) setTimeLeft(modeDuration);
-  }, [modeDuration, running]);
+    loadWeekSessions();
+    loadRangeData();
+  }, [sessions.length, loadWeekSessions, loadRangeData]);
 
-  useEffect(() => {
-    if (running) {
-      intervalRef.current = setInterval(() => {
-        setTimeLeft(prev => {
-          if (prev <= 1) {
-            clearInterval(intervalRef.current);
-            intervalRef.current = null;
-            setRunning(false);
-            return 0;
-          }
-          return prev - 1;
-        });
-      }, 1000);
-    } else if (intervalRef.current) {
-      clearInterval(intervalRef.current);
-      intervalRef.current = null;
-    }
-    return () => { if (intervalRef.current) clearInterval(intervalRef.current); };
-  }, [running]);
-
-  useEffect(() => {
-    if (timeLeft === 0 && !running && startTimeRef.current) {
-      playBell();
-      if (window.notificationApi) {
-        window.notificationApi.send("Focus Timer", "Session complete! Great work.");
-      }
-      const durationMin = Math.round(modeDuration / 60);
-      const session = {
-        task: taskLabel || MODES[mode].label,
-        mode,
-        duration: durationMin,
-        durationMin,
-        completedAt: new Date().toISOString(),
-      };
-      if (focusApi) {
-        focusApi.add(crypto.randomUUID(), todayStr, session).then(() => {
-          loadTodaySessions();
-          loadWeekSessions();
-          loadRangeData();
-        });
-      }
-      startTimeRef.current = null;
-    }
-  }, [timeLeft, running, modeDuration, todayStr, taskLabel, mode, loadTodaySessions, loadWeekSessions, loadRangeData]);
-
-  const handleStart = () => {
-    if (timeLeft === 0) setTimeLeft(modeDuration);
-    startTimeRef.current = Date.now();
-    setRunning(true);
-  };
-  const handlePause = () => setRunning(false);
-  const handleReset = () => {
-    setRunning(false);
-    startTimeRef.current = null;
-    setTimeLeft(modeDuration);
-  };
-  const handleModeChange = (m) => {
-    setRunning(false);
-    startTimeRef.current = null;
-    setCustomDuration("");
-    setMode(m);
-  };
+  const handleStart = focusTimer.start;
+  const handlePause = focusTimer.pause;
+  const handleReset = focusTimer.reset;
+  const handleModeChange = focusTimer.changeMode;
   const handleDeleteSession = async (id) => {
     if (focusApi) await focusApi.delete(id);
-    loadTodaySessions();
+    focusTimer.loadSessions();
     loadWeekSessions();
     loadRangeData();
   };

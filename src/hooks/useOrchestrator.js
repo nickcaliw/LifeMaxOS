@@ -174,27 +174,7 @@ export default function useOrchestrator() {
           /* noop */
         }
 
-        if (existing && existing.greeting && genId === 0) {
-          // Plan already exists for today — reuse it
-          const planData = existing;
-
-          if (!cancelled) {
-            setPlan(planData);
-            setDayType(existing.day_type || planData?.readiness?.dayType || "normal");
-            setReadiness(planData?.readiness || {});
-          }
-
-          // Still check yesterday's score
-          let yPlan = null;
-          try {
-            yPlan = await dailyPlanApi?.get(yesterday);
-          } catch (_) {
-            /* noop */
-          }
-          if (!cancelled) setScore(yPlan?.score != null ? { score: yPlan.score, breakdown: yPlan.score_breakdown } : null);
-          if (!cancelled) setLoading(false);
-          return;
-        }
+        // Always regenerate from fresh data (don't use stale cache)
 
         // -----------------------------------------------------------------
         // 2. Gather context in parallel

@@ -27,7 +27,7 @@
   --titlebar-h: 48px;
 
   /* Typography */
-  --font: "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --font: -apple-system, "SF Pro Display", "SF Pro Text", system-ui, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
   --font-mono: "SF Mono", ui-monospace, monospace;
 }
 
@@ -82,10 +82,14 @@
 }
 
 /* Dark mode: remap white-alpha backgrounds to dark equivalents */
-[data-theme="dark"] .btn{
+[data-theme="dark"] .btn,
+[data-theme="dark"] .miniBtn,
+[data-theme="dark"] .tabBtn{
   background: rgba(255,255,255,0.06);
 }
-[data-theme="dark"] .btn:hover{
+[data-theme="dark"] .btn:hover,
+[data-theme="dark"] .miniBtn:hover,
+[data-theme="dark"] .tabBtn:hover{
   background: rgba(255,255,255,0.10);
   border-color: rgba(255,255,255,0.14);
 }
@@ -112,8 +116,19 @@
   background: var(--paper);
 }
 [data-theme="dark"] .card,
-[data-theme="dark"] .panelCard{
+[data-theme="dark"] .panelCard,
+[data-theme="dark"] .dashCard,
+[data-theme="dark"] .projCard,
+[data-theme="dark"] .ltCard,
+[data-theme="dark"] .dsCard{
   background: var(--paper);
+}
+[data-theme="dark"] .card:hover,
+[data-theme="dark"] .dashCard:hover,
+[data-theme="dark"] .projCard:hover,
+[data-theme="dark"] .ltCard:hover,
+[data-theme="dark"] .dsCard:hover{
+  box-shadow: 0 2px 12px rgba(0,0,0,0.25);
 }
 [data-theme="dark"] .badge{
   background: rgba(255,255,255,0.08);
@@ -355,34 +370,75 @@ body{
   background: var(--accent);
   color: #fff;
 }
+/* ============================================================
+   UNIFIED CARD SYSTEM
+   ============================================================ */
+.card{
+  background: var(--paper);
+  border: 1px solid var(--line2);
+  border-radius: 12px;
+  padding: 14px 16px;
+  transition: all 0.15s ease;
+}
+.card:hover, .cardHoverable:hover{
+  border-color: var(--line);
+  box-shadow: 0 2px 12px rgba(0,0,0,0.06);
+}
+.cardActive{
+  box-shadow: 0 0 0 2px var(--accent);
+  border-color: var(--accent);
+}
+
+/* ============================================================
+   UNIFIED BUTTON SYSTEM
+   ============================================================ */
 .btn{
   border: 1px solid var(--line);
   background: rgba(255,255,255,0.55);
   border-radius: 9px;
-  padding: 7px 10px;
+  padding: 7px 14px;
   cursor: pointer;
-  font-weight: 700;
+  font-weight: 600;
   font-family: var(--font);
   font-size: 13px;
   color: var(--ink);
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  gap: 6px;
   transition: all 0.15s ease;
 }
 .btn:hover{
   background: rgba(255,255,255,0.85);
   border-color: rgba(20,20,20,0.2);
 }
+.btn:disabled{
+  opacity: 0.45;
+  pointer-events: none;
+}
+.btn.sm{
+  padding: 5px 10px;
+  font-size: 11.5px;
+  border-radius: 8px;
+}
 .btnPrimary{
   background: var(--accent);
   color: #fff;
   border-color: var(--accent);
-  font-weight: 700;
+  font-weight: 600;
 }
 .btnPrimary:hover{
   background: #4a6be0;
   border-color: #4a6be0;
+}
+.btnGhost{
+  background: transparent;
+  border-color: transparent;
+  color: var(--muted);
+}
+.btnGhost:hover{
+  background: var(--chip);
+  color: var(--ink);
 }
 
 /* ============================================================
@@ -479,7 +535,7 @@ body{
   color: var(--muted);
   border-radius: 8px;
   padding: 5px 10px;
-  font-weight: 700;
+  font-weight: 600;
   cursor: pointer;
   font-size: 11.5px;
   font-family: var(--font);
@@ -805,7 +861,7 @@ body{
   color: var(--muted);
   border-radius: 8px;
   padding: 5px 10px;
-  font-weight: 700;
+  font-weight: 600;
   font-size: 11.5px;
   font-family: var(--font);
   cursor: pointer;
@@ -2276,7 +2332,7 @@ body{
 .dashCard{
   width: 100%;
   text-align: left;
-  background: var(--dash-card-bg);
+  background: var(--dash-card-bg, var(--paper));
   border: 1px solid var(--line2);
   border-radius: 12px;
   padding: 14px 16px;
@@ -2289,7 +2345,7 @@ body{
 }
 .dashCard:hover{
   border-color: var(--line);
-  box-shadow: 0 4px 16px rgba(0,0,0,0.08);
+  box-shadow: 0 2px 12px rgba(0,0,0,0.06);
   transform: translateY(-1px);
 }
 .dashCardHeader{
@@ -2450,6 +2506,26 @@ body{
   margin-top: 10px;
   font-size: 13px;
   font-weight: 700;
+  color: var(--muted);
+}
+
+/* Dashboard Compact Quotes (left column) */
+.dashQuoteCompact{
+  padding: 8px 14px;
+  background: var(--dash-card-bg);
+  border: 1px solid var(--line2);
+  border-radius: 8px;
+  margin-top: 8px;
+  line-height: 1.4;
+}
+.dashQuoteCompactText{
+  font-size: 12.5px;
+  font-style: italic;
+  color: var(--ink);
+}
+.dashQuoteCompactAuthor{
+  font-size: 11.5px;
+  font-weight: 600;
   color: var(--muted);
 }
 
@@ -5825,13 +5901,13 @@ body{
 .dsCard{
   background: var(--paper);
   border: 1px solid var(--line2);
-  border-radius: 14px;
+  border-radius: 12px;
   padding: 0;
   overflow: hidden;
-  transition: box-shadow 0.15s ease;
+  transition: all 0.15s ease;
 }
-.dsCard:hover{ box-shadow: 0 2px 12px rgba(0,0,0,0.06); }
-.dsCardActive{ box-shadow: 0 0 0 2px var(--accent); }
+.dsCard:hover{ border-color: var(--line); box-shadow: 0 2px 12px rgba(0,0,0,0.06); }
+.dsCardActive{ box-shadow: 0 0 0 2px var(--accent); border-color: var(--accent); }
 .dsCardTop{
   padding: 16px 16px 12px;
 }
@@ -5979,7 +6055,7 @@ body{
   transition: all 0.15s ease;
   width: 100%;
 }
-.projCard:hover{ box-shadow: 0 2px 12px rgba(0,0,0,0.06); }
+.projCard:hover{ border-color: var(--line); box-shadow: 0 2px 12px rgba(0,0,0,0.06); }
 .projCardActive{ box-shadow: 0 0 0 2px var(--accent); border-color: var(--accent); }
 .projCardHeader{ display: flex; align-items: center; gap: 10px; }
 .projCardColor{ width: 8px; height: 32px; border-radius: 4px; flex-shrink: 0; }
@@ -6217,7 +6293,7 @@ body{
   transition: all 0.15s ease;
   width: 100%;
 }
-.ltCard:hover{ box-shadow: 0 2px 12px rgba(0,0,0,0.06); }
+.ltCard:hover{ border-color: var(--line); box-shadow: 0 2px 12px rgba(0,0,0,0.06); }
 .ltCardActive{ box-shadow: 0 0 0 2px var(--accent); border-color: var(--accent); }
 .ltCardOpened{ opacity: 0.7; }
 .ltCardIcon{ font-size: 24px; flex-shrink: 0; }

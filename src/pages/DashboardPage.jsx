@@ -30,6 +30,7 @@ const meditationApi = typeof window !== "undefined" ? window.meditationApi : nul
 const supplementsApi = typeof window !== "undefined" ? window.supplementsApi : null;
 const projectsApi = typeof window !== "undefined" ? window.projectsApi : null;
 const settingsApi = typeof window !== "undefined" ? window.settingsApi : null;
+const aiApi = typeof window !== "undefined" ? window.aiApi : null;
 
 const FOCUS_MODES = {
   work: { label: "Work", duration: 25 * 60 },
@@ -43,7 +44,7 @@ function formatFocusTime(totalSeconds) {
   return `${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
 }
 
-export default function DashboardPage({ onNavigate, spiritualPath: spPath }) {
+export default function DashboardPage({ onNavigate, spiritualPath: spPath, focusTimer }) {
   const today = useMemo(() => new Date(), []);
   const todayStr = useMemo(() => ymd(today), [today]);
   const greeting = useMemo(() => {
@@ -87,89 +88,22 @@ export default function DashboardPage({ onNavigate, spiritualPath: spPath }) {
   const [todayHeartRate, setTodayHeartRate] = useState(null);
   const [todayActiveCal, setTodayActiveCal] = useState(null);
 
-  // ── Focus timer ──
-  const [focusMode, setFocusMode] = useState("work");
-  const [focusTimeLeft, setFocusTimeLeft] = useState(FOCUS_MODES.work.duration);
-  const [focusRunning, setFocusRunning] = useState(false);
-  const [focusTask, setFocusTask] = useState("");
-  const [focusSessions, setFocusSessions] = useState([]);
-  const focusIntervalRef = useRef(null);
-  const focusStartRef = useRef(null);
-
-  const focusDuration = FOCUS_MODES[focusMode].duration;
-
-  const loadFocusSessions = useCallback(async () => {
-    if (!focusApi) return;
-    const data = await focusApi.getByDate(todayStr);
-    setFocusSessions(data || []);
-  }, [todayStr]);
-
-  // Focus timer tick
-  useEffect(() => {
-    if (focusRunning) {
-      focusIntervalRef.current = setInterval(() => {
-        setFocusTimeLeft(prev => {
-          if (prev <= 1) {
-            clearInterval(focusIntervalRef.current);
-            focusIntervalRef.current = null;
-            setFocusRunning(false);
-            return 0;
-          }
-          return prev - 1;
-        });
-      }, 1000);
-    } else if (focusIntervalRef.current) {
-      clearInterval(focusIntervalRef.current);
-      focusIntervalRef.current = null;
-    }
-    return () => { if (focusIntervalRef.current) clearInterval(focusIntervalRef.current); };
-  }, [focusRunning]);
-
-  // Auto-save session on completion
-  useEffect(() => {
-    if (focusTimeLeft === 0 && !focusRunning && focusStartRef.current) {
-      playBell();
-      const durationMin = Math.round(focusDuration / 60);
-      const session = {
-        task: focusTask || FOCUS_MODES[focusMode].label,
-        mode: focusMode,
-        duration: durationMin,
-        durationMin,
-        completedAt: new Date().toISOString(),
-      };
-      if (focusApi) {
-        focusApi.add(crypto.randomUUID(), todayStr, session).then(() => loadFocusSessions());
-      }
-      focusStartRef.current = null;
-    }
-  }, [focusTimeLeft, focusRunning, focusDuration, todayStr, focusTask, focusMode, loadFocusSessions]);
-
-  const focusStart = () => {
-    if (focusTimeLeft === 0) setFocusTimeLeft(focusDuration);
-    focusStartRef.current = Date.now();
-    setFocusRunning(true);
-  };
-  const focusPause = () => setFocusRunning(false);
-  const focusReset = () => {
-    setFocusRunning(false);
-    focusStartRef.current = null;
-    setFocusTimeLeft(focusDuration);
-  };
-  const focusModeChange = (m) => {
-    setFocusRunning(false);
-    focusStartRef.current = null;
-    setFocusMode(m);
-    setFocusTimeLeft(FOCUS_MODES[m].duration);
-  };
-
-  const focusTotalMin = useMemo(() =>
-    focusSessions.reduce((sum, s) => sum + (s.durationMin || s.duration || 0), 0),
-    [focusSessions]
-  );
-  const focusProgress = focusDuration > 0 ? focusTimeLeft / focusDuration : 0;
+  // ── Focus timer (shared from App.jsx) ──
+  const focusMode = focusTimer.mode;
+  const focusTimeLeft = focusTimer.timeLeft;
+  const focusRunning = focusTimer.running;
+  const focusTask = focusTimer.task;
+  const focusSessions = focusTimer.sessions;
+  const focusDuration = focusTimer.modeDuration;
+  const focusStart = focusTimer.start;
+  const focusPause = focusTimer.pause;
+  const focusReset = focusTimer.reset;
+  const focusModeChange = focusTimer.changeMode;
+  const focusTotalMin = focusTimer.totalMin;
+  const focusProgress = focusTimer.progress;
+  const focusIsBreak = focusTimer.isBreak;
   const focusCircumference = 2 * Math.PI * 40;
   const focusDashOffset = focusCircumference * (1 - focusProgress);
-  const focusIsBreak = focusMode !== "work";
 
   // ── Load all data ──
   useEffect(() => {
@@ -213,7 +147,6 @@ export default function DashboardPage({ onNavigate, spiritualPath: spPath }) {
         setSupplements((sl || []).filter(s => s.active !== false));
         setSuppLog(await supplementsApi.getLog(todayStr) || {});
       }
-      loadFocusSessions();
       if (projectsApi) {
         const p = await projectsApi.list();
         setActiveProjects((p || []).filter(proj => (proj.status || "active") === "active").slice(0, 3));
@@ -233,7 +166,7 @@ export default function DashboardPage({ onNavigate, spiritualPath: spPath }) {
       }
     }
     load();
-  }, [todayStr, today, loadFocusSessions]);
+  }, [todayStr, today]);
 
   // ── Planner save (debounced) ──
   const updateDay = useCallback((patch) => {
@@ -505,11 +438,228 @@ export default function DashboardPage({ onNavigate, spiritualPath: spPath }) {
     if (momentumStreak.current === 30) celebrate("streak30", "🏅", "30-day streak! Unstoppable!");
   }, [habitsPct, waterPct, suppDone, suppTotal, dailyScore.pct, momentumStreak.current, dayData, HABITS_LIST, celebrate]);
 
+  // ── LifeMax Coach ──
+  const [coachMsg, setCoachMsg] = useState(null);
+  const [coachLoading, setCoachLoading] = useState(false);
+  const [hasAiKey, setHasAiKey] = useState(false);
+  const coachFetchedRef = useRef(false);
+
+  // Check for API key
+  useEffect(() => {
+    if (!settingsApi) return;
+    settingsApi.get("ai_api_key").then(k => setHasAiKey(!!k));
+  }, []);
+
+  const generateCoachMessage = useCallback(async (forceRegenerate = false) => {
+    if (!aiApi || !settingsApi || !hasAiKey) return;
+
+    // Check cache first
+    if (!forceRegenerate) {
+      const cached = await settingsApi.get(`ai_coach_${todayStr}`);
+      if (cached) {
+        setCoachMsg(cached);
+        return;
+      }
+    }
+
+    setCoachLoading(true);
+    try {
+      const habitsCompleted = habitsDone;
+      const habitsGoal = habitsTotal;
+
+      // Build Apple Health trends from last 7 days
+      let sleepTrendStr = "";
+      if (sleepRange && Array.isArray(sleepRange) && sleepRange.length > 0) {
+        const recent7 = sleepRange.slice(-7);
+        const avgSleep = recent7.reduce((s, d) => s + (d.hours || 0), 0) / recent7.length;
+        const sleepDays = recent7.map(d => `${d.date}: ${(d.hours || 0).toFixed(1)}h`).join(", ");
+        sleepTrendStr = `Sleep trend (last ${recent7.length} days): avg ${avgSleep.toFixed(1)}h — ${sleepDays}`;
+      }
+
+      let stepsTrendStr = "";
+      try {
+        const stepsArr = [];
+        for (let i = 6; i >= 0; i--) {
+          const d = ymd(addDays(new Date(), -i));
+          const raw = await settingsApi.get(`steps_${d}`);
+          if (raw) { const p = JSON.parse(raw); stepsArr.push({ date: d, steps: p.count || 0 }); }
+        }
+        if (stepsArr.length > 0) {
+          const avgSteps = Math.round(stepsArr.reduce((s, d) => s + d.steps, 0) / stepsArr.length);
+          stepsTrendStr = `Steps trend (last ${stepsArr.length} days): avg ${avgSteps.toLocaleString()} — ${stepsArr.map(d => `${d.date}: ${d.steps.toLocaleString()}`).join(", ")}`;
+        }
+      } catch {}
+
+      let hrTrendStr = "";
+      try {
+        const hrArr = [];
+        for (let i = 6; i >= 0; i--) {
+          const d = ymd(addDays(new Date(), -i));
+          const raw = await settingsApi.get(`heartrate_${d}`);
+          if (raw) { const p = JSON.parse(raw); hrArr.push({ date: d, avg: p.avg || 0, min: p.min || 0, max: p.max || 0 }); }
+        }
+        if (hrArr.length > 0) {
+          const avgHR = Math.round(hrArr.reduce((s, d) => s + d.avg, 0) / hrArr.length);
+          hrTrendStr = `Resting heart rate trend (last ${hrArr.length} days): avg ${avgHR} bpm — ${hrArr.map(d => `${d.date}: avg ${d.avg}, min ${d.min}, max ${d.max}`).join(", ")}`;
+        }
+      } catch {}
+
+      let calTrendStr = "";
+      try {
+        const calArr = [];
+        for (let i = 6; i >= 0; i--) {
+          const d = ymd(addDays(new Date(), -i));
+          const raw = await settingsApi.get(`activecal_${d}`);
+          if (raw) { const p = JSON.parse(raw); calArr.push({ date: d, cal: p.total || 0 }); }
+        }
+        if (calArr.length > 0) {
+          const avgCal = Math.round(calArr.reduce((s, d) => s + d.cal, 0) / calArr.length);
+          calTrendStr = `Active calories trend (last ${calArr.length} days): avg ${avgCal} — ${calArr.map(d => `${d.date}: ${d.cal}`).join(", ")}`;
+        }
+      } catch {}
+
+      const userContext = [
+        `Date: ${todayStr}, Current time: ${new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} (the user has only been awake since this morning — today's steps, active calories, and heart rate are still accumulating and should NOT be compared to full-day totals from previous days)`,
+        `Daily Score: ${dailyScore.pct}%`,
+        `Habits: ${habitsCompleted}/${habitsGoal} completed (${habitsPct}%)`,
+        sleepHours !== null ? `Sleep last night: ${sleepHours.toFixed(1)} hours, quality: ${qualityLabels[sleepQuality] || "N/A"}` : "Sleep: not logged yet",
+        sleepTrendStr,
+        workoutLog?.completed ? "Workout: completed" : "Workout: not done yet",
+        `Water: ${waterGlasses}/${waterGoal} glasses (${waterPct}%)`,
+        todaySteps ? `Steps today: ${todaySteps.count?.toLocaleString()}` : "",
+        stepsTrendStr,
+        todayHeartRate ? `Heart rate today: avg ${todayHeartRate.avg} bpm (min ${todayHeartRate.min}, max ${todayHeartRate.max})` : "",
+        hrTrendStr,
+        todayActiveCal ? `Active calories today: ${todayActiveCal.total}` : "",
+        calTrendStr,
+        goals.length > 0 ? `Active goals: ${goals.map(g => g.title || g.name).join(", ")}` : "No active goals set",
+        journalEntry?.content ? `Journal mood: ${journalEntry.mood || "written"}` : "Journal: not written yet",
+        `Focus sessions: ${focusSessions.length} (${focusTotalMin} min total)`,
+        dailyAffirmation ? `Today's affirmation: "${dailyAffirmation.text}"` : "",
+        momentumStreak.current > 0 ? `Momentum streak: ${momentumStreak.current} days` : "",
+        medMinutes > 0 ? `Meditation: ${medMinutes} min` : "Meditation: not done yet",
+        suppTotal > 0 ? `Supplements: ${suppDone}/${suppTotal} taken` : "",
+      ].filter(Boolean).join("\n");
+
+      const messages = [
+        {
+          role: "system",
+          content: `You are a warm, encouraging life coach inside a personal dashboard app called LifeMaxOS. The user is viewing their daily dashboard. You have access to their real data including Apple Health metrics (steps, heart rate, active calories, sleep), habits, workouts, water, goals, focus sessions, and more. Analyze trends in their data — spot patterns, improvements, or concerns. Based on their real data for today AND recent trends, give a personalized coaching message (4-6 sentences). Be specific — mention actual numbers and trends. If you see a pattern (e.g. declining sleep, increasing resting heart rate, low step count), call it out with actionable advice. Balance encouragement with honest, data-driven nudges. Use a warm, conversational tone. Do NOT use markdown formatting, bullet points, or headers — just flowing prose. Do not start with "Hey" or greetings.`
+        },
+        {
+          role: "user",
+          content: `Here is my data for today:\n${userContext}\n\nGive me a brief, personalized coaching message.`
+        }
+      ];
+
+      const [apiKey, provider] = await Promise.all([
+        settingsApi.get("ai_api_key"),
+        settingsApi.get("ai_provider").catch(() => "openai"),
+      ]);
+      const result = await aiApi.chat(messages, { apiKey, provider: provider || "openai", maxTokens: 300, temperature: 0.8 });
+
+      if (result?.content) {
+        setCoachMsg(result.content);
+        await settingsApi.set(`ai_coach_${todayStr}`, result.content);
+      } else if (result?.error) {
+        console.error("LifeMax Coach error:", result.error);
+        setCoachMsg(result.error);
+      }
+    } catch (err) {
+      console.error("LifeMax Coach error:", err);
+      setCoachMsg(null);
+    } finally {
+      setCoachLoading(false);
+    }
+  }, [aiApi, settingsApi, hasAiKey, todayStr, habitsDone, habitsTotal, habitsPct, dailyScore.pct, sleepHours, sleepQuality, qualityLabels, workoutLog, waterGlasses, waterGoal, waterPct, goals, journalEntry, focusSessions, focusTotalMin, dailyAffirmation, momentumStreak.current, medMinutes, suppDone, suppTotal, todaySteps, todayHeartRate, todayActiveCal, sleepRange]);
+
+  // Auto-generate on load (once data is ready)
+  useEffect(() => {
+    if (!hasAiKey || coachFetchedRef.current) return;
+    // Wait until core data has loaded
+    if (dayData === null) return;
+    coachFetchedRef.current = true;
+    generateCoachMessage(false);
+  }, [hasAiKey, dayData, generateCoachMessage]);
+
   // ══════════════════════════════════════════
   // RENDER
   // ══════════════════════════════════════════
   return (
     <div className="dashPage">
+      <style>{`
+        .dashCoach {
+          background: linear-gradient(135deg, #fbf7f0 0%, #f0ecff 100%);
+          border-radius: 12px;
+          padding: 16px 18px;
+          border-left: 4px solid var(--accent, #5B7CF5);
+          margin-bottom: 12px;
+          box-shadow: 0 1px 4px rgba(91,124,245,0.08);
+        }
+        .dashCoachHeader {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          margin-bottom: 10px;
+        }
+        .dashCoachTitle {
+          font-weight: 600;
+          font-size: 14px;
+          color: var(--text, #3d3a35);
+          display: flex;
+          align-items: center;
+          gap: 6px;
+        }
+        .dashCoachIcon {
+          font-size: 16px;
+        }
+        .dashCoachRegenBtn {
+          background: none;
+          border: 1px solid var(--line2, #ddd);
+          border-radius: 6px;
+          padding: 4px 6px;
+          cursor: pointer;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          color: var(--text2, #8a8579);
+          transition: all 0.2s;
+        }
+        .dashCoachRegenBtn:hover:not(:disabled) {
+          border-color: var(--accent, #5B7CF5);
+          color: var(--accent, #5B7CF5);
+          background: rgba(91,124,245,0.06);
+        }
+        .dashCoachRegenBtn:disabled {
+          opacity: 0.5;
+          cursor: not-allowed;
+        }
+        .dashCoachBody {
+          font-size: 13.5px;
+          line-height: 1.6;
+          color: var(--text, #3d3a35);
+        }
+        .dashCoachLoading {
+          font-size: 13px;
+          color: var(--text2, #8a8579);
+          display: flex;
+          align-items: center;
+          gap: 8px;
+          padding: 8px 0;
+        }
+        .dashCoachSpinner {
+          display: inline-block;
+          width: 14px;
+          height: 14px;
+          border: 2px solid var(--line2, #ddd);
+          border-top-color: var(--accent, #5B7CF5);
+          border-radius: 50%;
+          animation: dashCoachSpin 0.8s linear infinite;
+        }
+        @keyframes dashCoachSpin {
+          to { transform: rotate(360deg); }
+        }
+      `}</style>
       <ConfettiCelebration show={showConfetti} onDone={() => setShowConfetti(false)} />
       <MilestoneToast show={!!toast} emoji={toast?.emoji} message={toast?.message} onDone={() => setToast(null)} />
 
@@ -571,6 +721,40 @@ export default function DashboardPage({ onNavigate, spiritualPath: spPath }) {
             </div>
           )}
 
+          {/* LifeMax Coach */}
+          {hasAiKey && (coachMsg || coachLoading) && (
+            <div className="dashCoach">
+              <div className="dashCoachHeader">
+                <div className="dashCoachTitle">
+                  <span className="dashCoachIcon">🧠</span> LifeMax Coach
+                </div>
+                <button
+                  className="dashCoachRegenBtn"
+                  onClick={() => generateCoachMessage(true)}
+                  disabled={coachLoading}
+                  type="button"
+                  title="Get a fresh coaching message"
+                >
+                  {coachLoading ? (
+                    <span className="dashCoachSpinner" />
+                  ) : (
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M21.5 2v6h-6" /><path d="M2.5 22v-6h6" />
+                      <path d="M2.5 11.5a10 10 0 0 1 18.4-4.5" /><path d="M21.5 12.5a10 10 0 0 1-18.4 4.5" />
+                    </svg>
+                  )}
+                </button>
+              </div>
+              {coachLoading && !coachMsg ? (
+                <div className="dashCoachLoading">
+                  <span className="dashCoachSpinner" /> Generating your coaching message...
+                </div>
+              ) : coachMsg ? (
+                <div className="dashCoachBody">{coachMsg}</div>
+              ) : null}
+            </div>
+          )}
+
           {/* Readiness + Health Recommendations */}
           {hiReadiness && (
             <ReadinessCard
@@ -599,8 +783,8 @@ export default function DashboardPage({ onNavigate, spiritualPath: spPath }) {
                 ))}
               </div>
             )}
-            {/* Hide reminders when health recommendations are active (they cover the same ground) */}
-            {!(hiRecs && hiRecs.length > 0) && (
+            {/* Reminders checklist */}
+            {(
               reminders.length > 0 ? (
                 <div className="dashReminders">
                   <div className="dashRemindersHeader">
@@ -745,6 +929,18 @@ export default function DashboardPage({ onNavigate, spiritualPath: spPath }) {
               </button>
             </div>
           )}
+
+          {/* Quotes — compact single-line */}
+          {spiritualContent && (
+            <div className="dashQuoteCompact">
+              <span className="dashQuoteCompactText">"{spiritualContent.verse || spiritualContent.text}"</span>
+              <span className="dashQuoteCompactAuthor"> — {spiritualContent.reference || spiritualContent.author}</span>
+            </div>
+          )}
+          <div className="dashQuoteCompact" style={{ marginTop: spiritualContent ? 6 : 0 }}>
+            <span className="dashQuoteCompactText">"{quote.text}"</span>
+            <span className="dashQuoteCompactAuthor"> — {quote.author}</span>
+          </div>
 
         </div>
 
@@ -1018,17 +1214,6 @@ export default function DashboardPage({ onNavigate, spiritualPath: spPath }) {
             ) : null}
           </div>
 
-          {/* Quotes — bottom of planner */}
-          {spiritualContent && (
-            <div className="dashBible" style={{ marginTop: 16 }}>
-              <div className="dashBibleVerse">"{spiritualContent.verse || spiritualContent.text}"</div>
-              <div className="dashBibleRef">-- {spiritualContent.reference || spiritualContent.author}</div>
-            </div>
-          )}
-          <div className="dashQuote" style={{ marginTop: spiritualContent ? 10 : 16 }}>
-            <div className="dashQuoteText">"{quote.text}"</div>
-            <div className="dashQuoteAuthor">-- {quote.author}</div>
-          </div>
         </div>
       </div>
 

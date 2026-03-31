@@ -32,25 +32,7 @@ export default function useHealthIntelligence() {
         const today = ymd(new Date());
         const yesterday = ymd(addDays(new Date(), -1));
 
-        // Check cache first
-        if (healthIntelApi) {
-          const cached = await healthIntelApi.getReadiness(today).catch(() => null);
-          if (cached && cached.score > 0 && !cancelled) {
-            setReadiness(cached);
-            const cachedRecs = await healthIntelApi.getRecommendations(today).catch(() => []);
-            setRecommendations(cachedRecs || []);
-            const cachedAlerts = await healthIntelApi.getAlerts(10).catch(() => []);
-            setAlerts(cachedAlerts || []);
-            setAutopilot(generateAutopilotBrief(
-              cached,
-              cachedRecs || [],
-              cachedAlerts || [],
-              null
-            ));
-            setLoading(false);
-            return;
-          }
-        }
+        // Always recalculate from fresh data (don't use stale cache)
 
         // Gather data in parallel
         const [
@@ -120,12 +102,27 @@ export default function useHealthIntelligence() {
           weightTrend14d = (avgSecond - avgFirst) / (recentWeights.length / 14);
         }
 
-        // Workout adherence
+        // Workout adherence + real volume
         let completedLast7 = 0;
         let scheduledLast7 = 0;
+        let recentVolume = 0; // total lbs lifted last 7 days
+        let workoutDaysLast7 = 0;
         try {
           const logs = await workoutApi?.getRange(weekAgo, yesterday);
-          if (logs) completedLast7 = Object.values(logs).filter(l => l?.completed).length;
+          if (logs) {
+            const logEntries = Object.values(logs).filter(l => l?.completed);
+            completedLast7 = logEntries.length;
+            workoutDaysLast7 = logEntries.length;
+            for (const log of logEntries) {
+              for (const ex of (log.exercises || [])) {
+                for (const set of (ex.sets || [])) {
+                  const w = Number(set.weight) || 0;
+                  const r = Number(set.reps) || 0;
+                  if (w > 0 && r > 0) recentVolume += w * r;
+                }
+              }
+            }
+          }
           const sched = await scheduleApi?.getRange(weekAgo, yesterday);
           if (sched) scheduledLast7 = (sched || []).length;
         } catch {}
@@ -139,11 +136,13 @@ export default function useHealthIntelligence() {
           wakeVariance,
           mood: mood || "okay",
           energy: energy || 3,
-          recentWorkload: 100, // simplified
-          maxRecoverableVolume: 200,
+          // Real workload: volume lifted last 7 days vs estimated MRV
+          // Estimate MRV as ~5 sessions * 25,000 lbs per session = 125,000 lbs/week
+          recentWorkload: recentVolume,
+          maxRecoverableVolume: Math.max(recentVolume, 125000),
           avgSoreness: 1,
           completedLast7,
-          scheduledLast7: Math.max(scheduledLast7, 1),
+          scheduledLast7: Math.max(scheduledLast7, workoutDaysLast7, 1),
         };
 
         const readinessResult = calculateReadiness(readinessCtx);
